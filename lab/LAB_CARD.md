@@ -6,8 +6,8 @@ SKKU 특강 "Vibe Coding in the Humanities" (2026-10-16) 후속 / follow-up
 ## 무엇인가요? / What is it?
 - 교수님 슬라이드의 과제 목록 6가지를 Google Colab 노트북 하나(`dickens_lab.ipynb`)로 해 봅니다. 특강에서 끝까지 하지 못한 부분입니다.
   The six tasks from the professor's task list, in one Colab notebook — the parts the lecture did not finish.
-- 과제마다: 연구 질문 한 줄 → AI에 붙여 넣을 프롬프트(한/영) → 실행되는 참고 코드 → "나는 무엇을 정했나?"
-  Each task: a research question → a prompt for any AI (KO/EN) → working reference code → "What did you decide?"
+- 과제마다: 연구 질문 한 줄 → AI에 붙여 넣을 프롬프트(한/영) → 막히면 보낼 고치기 프롬프트 예시 → 실행되는 참고 코드 → "나는 무엇을 정했나?"
+  Each task: a research question → a prompt for any AI (KO/EN) → an example fix-it prompt for when it goes wrong → working reference code → "What did you decide?"
 - 방법: AI로 코드를 만들고, 실행하고, 고칩니다. 그다음 참고 코드 결과와 비교합니다.
   Method: generate code with an AI, run it, fix it, then compare with the reference.
 
