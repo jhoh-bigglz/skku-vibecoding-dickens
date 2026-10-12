@@ -15,11 +15,13 @@ SKKU 특강 "Vibe Coding in the Humanities" (2026-10-16) 후속 / follow-up
 1. https://colab.research.google.com 에 구글 계정으로 접속 / sign in with a Google account
 2. **File → Upload notebook** → `dickens_lab.ipynb` 선택 / choose the file
    또는 링크로 열기 / or open the link: https://colab.research.google.com/github/jhoh-bigglz/skku-vibecoding-dickens/blob/main/lab/dickens_lab.ipynb
+   링크로 열면 첫 실행 때 경고 창이 뜹니다. **Run anyway**를 누르고, 고친 내용을 남기려면 **File → Save a copy in Drive**. / Via the link: click **Run anyway** at the warning; **File → Save a copy in Drive** keeps your edits.
 3. 위에서부터 셀 실행(▶ 또는 Shift+Enter). **섹션 0을 먼저.** / Run cells from the top. **Section 0 first.**
+   뒤 과제는 앞 과제의 변수를 씁니다. 중간 과제부터 하려면 먼저 **Runtime → Run all**(모두 실행). / Later tasks use earlier variables: to start mid-way, first use **Runtime → Run all**.
 
 ## 과제 체크리스트 / Task checklist (총 60–90분 / min)
 - [ ] **0. 준비** 텍스트 내려받기 / Setup: download the text — 5분
-- [ ] **1. 정제** Gutenberg 머리말·꼬리말·메타데이터 제거, 원래 56편만 남기기(1903년판 87편 중) / Strip header, footer, metadata; keep the original 56 of 87 pieces — 10분
+- [ ] **1. 정제** Gutenberg 머리말·꼬리말·메타데이터 제거, 원래 56편만 남기기(1903년판에 함께 묶인 다른 작품 3종 제외) / Strip header, footer, metadata; keep the original 56 (drop the 3 later works bundled in the file) — 10분
 - [ ] **2. 불용어** 불용어 제거 + 화이트리스트(Mr, Mrs, Miss, Sir, Lord). 그리고 is·are·we vs I·said·was: 지운 단어가 장르 신호라면? / Stopwords + whitelist; function words as genre signals — 15분
 - [ ] **3. 장소** 언급된 장소와 빈도 / Places and frequencies — 10분
 - [ ] **4. 거리** 언급된 거리와 빈도 ('Monmouth-street' 같은 하이픈·소문자 표기 처리) / Streets and frequencies (hyphens, lowercase) — 10분

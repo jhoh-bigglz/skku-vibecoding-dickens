@@ -37,7 +37,7 @@ source; **Medium** = stated in one secondary/older source, or inferred from word
 - Heights (houses ≈ 3–4 storeys over arcades), number of bays, roof forms, colours, chimney stacks: generic.
 - Church proportions; portico shown with 4 columns in a simplified way.
 - St Paul's portico drawn as two round columns between two square corner piers, under a deep-eaved pediment roof — a simplified impression, **not checked** against the sources above.
-- People and carts are **enlarged (people ×1.5, carts ×1.25)** so they are visible in an overview; they are not to scale with the buildings.
+- People and carts are **enlarged (people ×1.5, carts ×1.25)** so they are visible in an overview; they are not to scale with the buildings. *(v1. In v2 the detailed figures, horses and carts are drawn at about **2× life size** against the 10-ft grid of the buildings; see the v2 section below.)*
 - Houses continuing west along King Street and Henrietta Street, and the grid of blocks around the square, are generic filler to give context.
 - Gas lamps, lit windows, cabbage-leaf litter, carts, horses, donkeys, people: **illustrative**, placed by a seeded random generator, numbers chosen to follow the *mood* of the text, not any count.
 - Sun position: computed for **midsummer** at London's latitude (51.5° N) using local solar time; Dickens says only "a summer's morning". Clock times of the first three steps are approximate.
@@ -50,3 +50,14 @@ Charles Dickens, "The Streets—Morning", *Sketches by Boz* (Project Gutenberg #
 ## Context for the lecture
 
 Miriam Posner, "How did they make that?" (29 Aug 2013) lists "Historical 3D model" with the example *Digital Magnesia* (CityEngine) and suggests SketchUp, Maya or Rhino. — https://miriamposner.com/blog/how-did-they-make-that/
+
+## v2 (2026-10-12): detailed figures — what is assumed
+
+`covent_garden_1830s_v2.html` keeps the buildings, time steps and sun of v1 and replaces the people, horses and carts with detailed, animated figures. Everything below is **illustrative**, chosen to fit the text and the period-costume notes (`../video/고증노트.md`), not measured from a source.
+
+- **Scale:** people, horses and carts ≈ 2× life size for legibility (footer note). Not to scale with the buildings.
+- **Costume:** clerks in tailcoats (some frock coats, about 7:3), light trousers, beaver top hats, white neckcloths, umbrellas; working men in waistcoats or smocks with caps or low hats; women in ankle-length bell skirts with shawls, 1830s bonnets or frilled caps and aprons; office lads with oversized hats (¶12); 1829–39 Metropolitan police: blue swallow-tail coat, top hat, white summer trousers, no helmet, no whistle. Costermongers' dress follows Mayhew (1851), i.e. a little later than 1835.
+- **Scenes from the text:** fruit-carriers with baskets on their heads (¶5), the sleepy waggoner and the boy asleep on the fruit baskets (¶4), a chimney-sweep boy waiting on a door step (¶6), the vagrant and the last drunk (¶2), a coffee stall at a breakfast table (¶5). Their exact places (e.g. fruit-carriers in James, Russell and Southampton Streets, although Dickens has them coming down Piccadilly) are staging choices.
+- **Vehicles:** one-horse market carts, donkey costermongers' carts, and the heavy waggon with four horses (¶7) drawn **in single file** with the wheeler in the shafts (common for English waggons; not confirmed for this market). Paint colours, loads (cabbages, baskets, sacks, crates) and keeping to the left are assumptions.
+- **Motion:** walking people, idling stall-holders, and at “+1 h” the carts rolling in along the approach streets (¶4). Crowd paths are generated, not observed.
+- **Changes to v1's layout:** one filler block that stood on Southampton Street was removed (the carts were hidden inside it), and one breakfast table that stood inside a house was moved into Russell Street.

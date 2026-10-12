@@ -1,5 +1,8 @@
 # PROMPTS: 복사해서 붙여 넣는 프롬프트 / Copy-paste prompts
 
+**준비:** [dh-lab.zip](https://github.com/jhoh-bigglz/skku-vibecoding-dickens/raw/main/dh-lab.zip)을 풀고, VS Code에서 `dh-lab` 폴더를 연 뒤(File → Open Folder) 그 터미널에서 `vixcode`를 실행합니다. 다른 폴더에서 실행하면 data/ 파일을 찾지 못합니다.
+**Setup:** unzip dh-lab.zip, open the `dh-lab` folder in VS Code (File → Open Folder) and run `vixcode` in its terminal. Started in another folder, it cannot find the data/ files.
+
 **순서:** ① 메모장에 내가 알고 싶은 것을 한 줄로 쓴다 → ② 아래 상자 하나를 통째로 복사해 `[ ]` 자리에 그 한 줄을 넣는다 → ③ Vix Code(또는 아무 AI 채팅)에 붙여 넣는다 → ④ **실행하지 말고, 받은 계획을 읽고 이상한 곳을 찾는다.**
 **Steps:** ① write one line in a notepad: what do you want to know? → ② copy one whole box and put that line in `[ ]` → ③ paste it into Vix Code (or any AI chat) → ④ **don't run anything; read the plan and find what's wrong.**
 
@@ -37,15 +40,17 @@ Don't create or run anything yet. Just give me a plan: the steps, the files each
 **KO**
 ```text
 위 계획에서 [고칠 점]을 고친 뒤 실행해 줘. 파이썬과 matplotlib만 쓰고, 결과는 results/ 폴더에 표(csv) 하나와 그래프(png) 하나로 남겨 줘.
+파일은 UTF-8로 읽고 써 줘. 그래프의 제목과 축 이름은 영어로 써 줘(한글은 네모로 깨질 수 있어).
 숫자는 지어내지 말고, 결과를 세 줄로 해석하되 한계를 하나 꼭 적어 줘.
-윈도우에서는 python 대신 py로 실행해.
+윈도우에서는 python 대신 py로, 맥에서는 python3로 실행해.
 ```
 
 **EN**
 ```text
 Fix [what to change] in the plan above, then run it. Use only Python and matplotlib, and save one table (csv) and one chart (png) in a results/ folder.
+Read and write files as UTF-8. Write the chart title and axis labels in English.
 Don't invent numbers. Give a three-line reading of the result, including one limitation.
-On Windows, run py instead of python.
+On Windows, run py instead of python; on Mac, run python3.
 ```
 
 ---

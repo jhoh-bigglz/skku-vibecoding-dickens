@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Covent Garden, 1830s</title>
-<meta name="description" content="Covent Garden, 1830s — a schematic 3D reconstruction from Dickens's 'The Streets—Morning' (prototype)">
+<meta name="description" content="Covent Garden, 1830s — a schematic 3D reconstruction from Dickens's 'The Streets—Morning' (prototype, v2: detailed, animated figures)">
 <style>
   :root{
     --ink:#f3ede2; --ink-dim:#cfc6b6; --panel:rgba(24,22,20,.78); --line:rgba(255,255,255,.14);
@@ -76,6 +76,8 @@
     .lbl.minor{font-size:10px}
     footer{white-space:normal;font-size:10px;bottom:4px;left:8px;right:8px}
   }
+  /* ?ui=0: scene only (for slide pictures) */
+  body.noui header, body.noui #panel, body.noui footer, body.noui #compass, body.noui #labels{display:none!important}
 </style>
 <script>
   // error overlay + status for headless checks (--dump-dom)
@@ -129,6 +131,7 @@
   <div class="row2">
     <button id="play">▶ Play</button>
     <button id="reset">Reset view</button>
+    <button id="closeBtn" title="Street-level close-up for this hour">Close-up</button>
     <button id="lblBtn">Labels: on</button>
     <div class="legend">
       <span><i class="chip" style="background:var(--market)"></i>market folk</span>
@@ -137,7 +140,7 @@
     </div>
   </div>
 </div>
-<footer>Schematic, not to scale. Built from a prompt with an AI coding agent as a lecture prototype. Sources: see <a href="sources.md">sources.md</a></footer>
+<footer>Schematic, not to scale; figures ≈2× life size for legibility. Built from a prompt with an AI coding agent as a lecture prototype. Sources: see <a href="sources.md">sources.md</a></footer>
 <div id="msg"></div>
 <div id="err"></div>
 <pre id="status">loading</pre>
@@ -165,6 +168,11 @@ const Q = new URLSearchParams(location.search);
 let step = Math.max(0, Math.min(5, parseInt(Q.get('t') ?? '0', 10) || 0));
 let showLabels = Q.get('labels') !== '0';
 const VIEW = Q.get('view') || 'default';
+const SHOT = Q.get('shot') === '1';                    // headless screenshot mode: animation frozen
+const NOUI = Q.get('ui') === '0';                       // scene only, no panel/labels (for slide pictures)
+if (NOUI) document.body.classList.add('noui');
+const CAMQ = (Q.get('cam')||'').split(',').map(Number); // optional camera: cam=x,y,z,tx,ty,tz
+const TSQ = Q.has('ts') ? parseFloat(Q.get('ts')) : null; // optional frozen time within the step (s), for shots
 
 /* ---------------- utilities ---------------- */
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
@@ -199,7 +207,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.maxPolarAngle = Math.PI*0.47;
-controls.minDistance = 8;
+controls.minDistance = 2.5;   // v2: allow street-level close-ups
 controls.maxDistance = 220;
 
 /* sky dome */
@@ -301,6 +309,8 @@ function roof(parent, span, len, h, x,y,z, mats){
 }
 
 /* ---------------- world ---------------- */
+const PIERS = [];   // v2: arcade piers in world x,z (obstacles for figures)
+function collectPiers(g){ g.updateMatrixWorld(true); for(const v of (g.userData.piers||[])){ v.applyMatrix4(g.matrixWorld); PIERS.push([v.x, v.z]); } }
 const world = new THREE.Group(); scene.add(world);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(500,500), M('#55514b'));
 ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; world.add(ground);
@@ -330,6 +340,7 @@ function houseRow(group, segs, depth=4){
       for(let i=0;i<=bays;i++){
         const px = x + i*(w/bays);
         box(group, 0.34, AH, 0.34, Math.min(Math.max(px, x+0.17), x+w-0.17), 0, -0.17, M(C.stone));
+        (group.userData.piers ||= []).push(new THREE.Vector3(Math.min(Math.max(px, x+0.17), x+w-0.17), 0, -0.17));
       }
       box(group, w, 0.18, AD, cx, AH-0.18, -AD/2, M(C.stoneDark), {cast:false});
       box(group, w, 0.22, 0.12, cx, AH-0.05, 0.02, M(C.stone), {cast:false});
@@ -379,6 +390,7 @@ function splitHouses(total, opts={}, sizes=[3,4,3,4,3]){
     ...splitHouses(19.6, {arcade:true, floors:2, lit:0.08}, [6,4,4]),
     {w:4.2, floors:3, color:C.brick[2]}
   ]);
+  collectPiers(g);
   // King St (north side), west of the piazza
   const k=new THREE.Group(); k.position.set(-45,0,-15.8); world.add(k);
   houseRow(k, splitHouses(23.5, {}));
@@ -404,6 +416,7 @@ function splitHouses(total, opts={}, sizes=[3,4,3,4,3]){
     {w:5.0, floors:3, color:'#d9c9a3', roofH:1.1, lit:0.12},   // the Hummums (approx. site)
     ...splitHouses(9.2, {}),
   ]);
+  collectPiers(g);
 }
 
 /* St Paul's Church — body west of the piazza, Tuscan portico facing east */
@@ -467,6 +480,7 @@ const market = new THREE.Group(); world.add(market);
 }
 
 /* surrounding city fabric (generic) */
+const FILLER = [];   // v2: footprints, used to keep figures out of buildings
 {
   const fm = C.filler.map(c=>M(c));
   const free = (x,z)=>{
@@ -481,8 +495,10 @@ const market = new THREE.Group(); world.add(market);
     for(const [ox,oz] of [[0,0],[3.6,0],[0,3.6],[3.6,3.6]]){
       const x=gx+ox+1.8, z=gz+oz+1.8;
       if(!free(x-1.8,z-1.8)||!free(x+1.8,z+1.8)||!free(x-1.8,z+1.8)||!free(x+1.8,z-1.8)) continue;
-      const h=R(3.0,5.2);
-      box(world, 3.5, h, 3.5, x, 0, z, pick(fm), {cast:false, recv:true});
+      const h=R(3.0,5.2), fmat=pick(fm);
+      if (z>19 && x+1.75>3.7 && x-1.75<6.9) continue;   // v2 fix: v1 put blocks on Southampton St (its carts were hidden inside)
+      box(world, 3.5, h, 3.5, x, 0, z, fmat, {cast:false, recv:true});
+      FILLER.push([x-1.75, x+1.75, z-1.75, z+1.75]);
     }
   }
 }
@@ -491,159 +507,1167 @@ const market = new THREE.Group(); world.add(market);
 const lamps=[]; const glowTex = canvasTex(64,64,(g,w,h)=>{ const gr=g.createRadialGradient(32,32,0,32,32,32);
   gr.addColorStop(0,'rgba(255,214,140,1)'); gr.addColorStop(0.35,'rgba(255,190,100,.45)'); gr.addColorStop(1,'rgba(255,170,80,0)'); g.fillStyle=gr; g.fillRect(0,0,w,h); });
 const lampHeadMat = new THREE.MeshStandardMaterial({color:0x222222, emissive:0xffc070, emissiveIntensity:2});
-for(const [x,z] of [[-15,-14.9],[-5,-14.9],[5,-14.9],[15,-14.9],[-15,14.9],[-5,14.9],[5,14.9],[15,14.9],[-17.2,-5.5],[-17.2,5.5],[20.3,-11],[20.3,11]]){
+const LAMP_XZ = [[-15,-14.9],[-5,-14.9],[5,-14.9],[15,-14.9],[-15,14.9],[-5,14.9],[5,14.9],[15,14.9],[-17.2,-5.5],[-17.2,5.5],[20.3,-11],[20.3,11]];
+for(const [x,z] of LAMP_XZ){
   box(world, 0.12, 2.5, 0.12, x, 0, z, M('#262422'), {cast:false});
   const head=box(world, 0.3, 0.38, 0.3, x, 2.5, z, lampHeadMat, {cast:false});
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex, blending:THREE.AdditiveBlending, depthWrite:false, transparent:true}));
   sp.position.set(x, 2.7, z); sp.scale.set(3.2,3.2,1); world.add(sp); lamps.push(sp);
 }
 
-/* ---------------- activity: carts, horses, donkeys ---------------- */
-const horseCols=['#5b3d28','#3a2a20','#7a5a3c','#2c2622','#8a8278'];
-const loadCols=['#6d8a3f','#7f9a48','#c98a3a','#9c3b2f','#8a6a3e','#a8b26a'];
-function makeHorse(parent, x, z, scale=1, col){
-  const g=new THREE.Group(); g.position.set(x,0,z); g.scale.setScalar(scale); parent.add(g);
-  const m=M(col);
-  box(g, 0.9, 0.4, 0.32, 0, 0.55, 0, m);
-  for(const [lx,lz] of [[0.36,0.11],[0.36,-0.11],[-0.36,0.11],[-0.36,-0.11]]) box(g, 0.09, 0.56, 0.09, lx, 0, lz, m, {cast:false});
-  const neck=box(g, 0.22, 0.42, 0.16, 0.5, 0.72, 0, m); neck.rotation.z=-0.5;
-  box(g, 0.34, 0.15, 0.15, 0.68, 1.05, 0, m, {cast:false});
+/* =====================================================================================
+   FIGURES (v2): people, horses, donkeys and carts
+   - each figure type is ONE merged geometry built from simple primitives (modelled in
+     metres, facing +Z, feet on y=0) and drawn as an InstancedMesh.
+   - colours come from per-vertex "slots" filled per instance (coat, trousers/skirt,
+     accent, hat/bonnet, skin), so one mesh gives many different people.
+   - walking and idling are done in the vertex shader (limbs swing about their joints,
+     walkers follow short paths), so ~500 people cost no CPU per frame. Only the carts
+     that roll in along the approach streets (+1 h step) are moved on the CPU.
+   ===================================================================================== */
+const PS = 1.5;                  // people: v1 base figure ×1.5 (kept from v1)
+const CS = 1.25;                 // carts & animals: v1 base models ×1.25 (kept from v1)
+// v1's base figure was 0.82 units tall (≈0.48 units per metre for a 1.70 m man); ×PS gives ≈0.72 world units
+// per metre. Animals and carts use the same metre scale, so people, horses and wheels stay in proportion.
+// Against the 10-ft grid of the buildings this is ≈2.2× life size (said in the footer).
+const WPM = PS*0.82/1.70;
+const GY = 0.02;                 // paving level
+const arng = mulberry32(1835);   // separate seeded stream: figures are reproducible, buildings keep v1's stream
+const AR = (a,b)=>a+(b-a)*arng();
+const apick = arr=>arr[Math.floor(arng()*arr.length)];
+function pickW(list){ let s=0; for(const e of list) s+=e[1]; let r=arng()*s; for(const e of list){ r-=e[1]; if(r<=0) return e[0]; } return list[list.length-1][0]; }
+const COLC = new Map();
+const col = h=>{ let c=COLC.get(h); if(!c){ c=new THREE.Color(h); COLC.set(h,c); } return c; };
+
+/* ---------- shaders ---------- */
+const U = { uTime:{value:0}, uStepTime:{value:0}, uSkinA:{value:new THREE.Color('#e9c4a6')}, uSkinB:{value:new THREE.Color('#a9785a')} };
+const GLSL_ROT = `
+mat3 rX(float a){ float c=cos(a), s=sin(a); return mat3(1.,0.,0., 0.,c,s, 0.,-s,c); }
+mat3 rY(float a){ float c=cos(a), s=sin(a); return mat3(c,0.,-s, 0.,1.,0., s,0.,c); }
+mat3 rZ(float a){ float c=cos(a), s=sin(a); return mat3(c,s,0., -s,c,0., 0.,0.,1.); }`;
+// people. aRig = (limb, colour slot, pivot y, pivot z). iAnim = (mode, time offset, speed m/s, path length m)
+// mode 0 stand (sway, look around), 1 walk to and fro along local +Z, 2 walk once along +Z and stop.
+// iMisc = (skin tone, sway, stride m, knee height m). Limbs: 1/2 thighs, 7/8 shins+shoes, 3/4 arms, 5 head, 6 skirt.
+const GLSL_PERSON = `
+attribute vec4 aRig;
+attribute vec3 iColA; attribute vec3 iColB; attribute vec3 iColC; attribute vec3 iColD;
+attribute vec4 iAnim; attribute vec4 iMisc;
+uniform float uTime; uniform float uStepTime; uniform vec3 uSkinA; uniform vec3 uSkinB;
+float rgPh, rgMv, rgYaw, rgS, rgSway, rgHead;
+${GLSL_ROT}
+void rigState(){
+  float mode = iAnim.x, sd = iAnim.y, v = max(iAnim.z, 0.01), L = iAnim.w;
+  float dist = 0.0; rgMv = 0.0; rgYaw = 0.0; rgS = 0.0;
+  if (mode > 0.5 && mode < 1.5) {
+    float wT = L/v, tT = 1.3, P = 2.0*(wT + tT);
+    float u = mod(uStepTime + sd, P);
+    if (u < wT) { rgS = v*u; dist = rgS; rgMv = smoothstep(0.0, 0.5, u)*smoothstep(0.0, 0.5, wT - u); }
+    else if (u < wT + tT) { rgS = L; dist = L; rgYaw = PI*smoothstep(0.0, 1.0, (u - wT)/tT); }
+    else if (u < 2.0*wT + tT) { float k = u - wT - tT; rgS = L - v*k; dist = L + v*k; rgYaw = PI; rgMv = smoothstep(0.0, 0.5, k)*smoothstep(0.0, 0.5, wT - k); }
+    else { dist = 2.0*L; rgYaw = PI + PI*smoothstep(0.0, 1.0, (u - 2.0*wT - tT)/tT); }
+  } else if (mode > 1.5) {
+    float k = uStepTime - sd;
+    rgS = clamp(v*k, 0.0, L); dist = rgS;
+    rgMv = smoothstep(0.0, 0.5, k)*smoothstep(0.0, 0.5, (L - rgS)/v);
+  }
+  rgPh = dist/max(iMisc.z, 0.2)*PI2;
+  rgSway = iMisc.y*sin(uTime*(0.6 + 0.3*fract(sd*0.37)) + sd*2.3);
+  rgHead = mode < 0.5 ? 0.45*sin(uTime*0.21 + sd*1.7)*smoothstep(0.2, 0.9, sin(uTime*0.09 + sd)) : 0.0;
+}
+vec3 rigP(vec3 p, bool N){
+  float limb = aRig.x; vec2 pv = aRig.zw; float g = rgPh; float sg = sin(g);
+  if (limb > 0.5 && limb < 4.5) {
+    float a = limb < 1.5 ? -0.42*sg : (limb < 2.5 ? 0.42*sg : (limb < 3.5 ? 0.30*sg : -0.30*sg));
+    a *= rgMv;
+    if (!N) p.yz -= pv; p = rX(a)*p; if (!N) p.yz += pv;
+  } else if (limb > 6.5 && limb < 8.5) {
+    float sl = limb < 7.5 ? -1.0 : 1.0;
+    float bend = 0.85*rgMv*max(0.0, -sl*cos(g));
+    vec2 kp = vec2(iMisc.w, 0.0);
+    if (!N) p.yz -= kp; p = rX(bend)*p; if (!N) p.yz += kp;
+    float a = sl*0.42*rgMv*sg;
+    if (!N) p.yz -= pv; p = rX(a)*p; if (!N) p.yz += pv;
+  } else if (limb > 4.5 && limb < 5.5) {
+    p = rY(rgHead)*p;
+  } else if (limb > 5.5 && limb < 6.5) {
+    float a = 0.05*rgMv*sg;
+    if (!N) p.y -= pv.x; p = rZ(a)*p; if (!N) p.y += pv.x;
+  }
+  p = rZ(rgSway)*p;
+  p = rY(rgYaw)*p;
+  if (!N) { p.y += 0.02*rgMv*(0.5 + 0.5*cos(2.0*g)); p.z += rgS; }
+  return p;
+}`;
+const GLSL_PERSON_COLOR = `
+#include <color_vertex>
+{ float sl = aRig.y; vec3 sc = vec3(1.0);
+  if (sl > 0.5) { if (sl < 1.5) sc = iColA; else if (sl < 2.5) sc = iColB; else if (sl < 3.5) sc = iColC; else if (sl < 4.5) sc = iColD; else sc = mix(uSkinA, uSkinB, iMisc.x); }
+  vColor.rgb *= sc; }`;
+// horses & donkeys. aRig2 = (knee sign, knee y, knee z, leg phase offset). iGait = (phase in strides, walking 0..1, seed, -)
+// limbs 1–4 legs (4-beat walk), 5 neck+head (nods with the stride / idles), 6 tail (swish)
+const GLSL_QUAD = `
+attribute vec4 aRig; attribute vec4 aRig2;
+attribute vec3 iColA; attribute vec3 iColB; attribute vec4 iGait;
+uniform float uTime;
+${GLSL_ROT}
+vec3 quadP(vec3 p, bool N){
+  float limb = aRig.x; vec2 pv = aRig.zw;
+  float ph = iGait.x, amp = iGait.y, sd = iGait.z;
+  if (limb > 0.5 && limb < 4.5) {
+    float w = PI2*(ph + aRig2.w);
+    if (abs(aRig2.x) > 0.5) {
+      float bend = aRig2.x*0.65*amp*max(0.0, cos(w));
+      if (!N) p.yz -= aRig2.yz; p = rX(bend)*p; if (!N) p.yz += aRig2.yz;
+    }
+    float a = -0.30*amp*sin(w);
+    if (!N) p.yz -= pv; p = rX(a)*p; if (!N) p.yz += pv;
+  } else if (limb > 4.5 && limb < 5.5) {
+    float a = 0.07*amp*sin(2.0*PI2*ph) + (1.0 - amp)*(0.05*sin(uTime*0.5 + sd*3.1) + 0.07*smoothstep(0.5, 1.0, sin(uTime*0.13 + sd*2.0)));
+    if (!N) p.yz -= pv; p = rX(a)*p; if (!N) p.yz += pv;
+  } else if (limb > 5.5 && limb < 6.5) {
+    float a = (0.07 + 0.25*(1.0 - amp)*smoothstep(0.3, 1.0, sin(uTime*0.41 + sd*2.0)))*sin(uTime*2.4 + sd*4.0);
+    if (!N) p.y -= pv.x; p = rZ(a)*p; if (!N) p.y += pv.x;
+  }
+  if (!N) p.y += 0.02*amp*cos(2.0*PI2*ph);
+  return p;
+}`;
+const GLSL_QUAD_COLOR = `
+#include <color_vertex>
+{ float sl = aRig.y; vec3 sc = vec3(1.0); if (sl > 0.5) sc = sl < 1.5 ? iColA : iColB; vColor.rgb *= sc; }`;
+const GLSL_STAT = `attribute vec4 aRig; attribute vec3 iColA; attribute vec3 iColB; attribute vec3 iColC;`;
+const GLSL_STAT_COLOR = `
+#include <color_vertex>
+{ float sl = aRig.y; vec3 sc = vec3(1.0); if (sl > 0.5) { if (sl < 1.5) sc = iColA; else if (sl < 2.5) sc = iColB; else sc = iColC; } vColor.rgb *= sc; }`;
+
+function makeRigMats(kind){
+  const mat = new THREE.MeshStandardMaterial({roughness:0.86, metalness:0, vertexColors:true, side: kind==='person' ? THREE.DoubleSide : THREE.FrontSide});
+  const pars = kind==='person' ? GLSL_PERSON : kind==='quad' ? GLSL_QUAD : GLSL_STAT;
+  const colr = kind==='person' ? GLSL_PERSON_COLOR : kind==='quad' ? GLSL_QUAD_COLOR : GLSL_STAT_COLOR;
+  const fn = kind==='person' ? 'rigP' : 'quadP';
+  const pre = kind==='person' ? 'rigState(); ' : '';
+  mat.onBeforeCompile = (sh)=>{
+    Object.assign(sh.uniforms, U);
+    let v = sh.vertexShader.replace('#include <common>', '#include <common>\n'+pars).replace('#include <color_vertex>', colr);
+    if (kind!=='static'){
+      v = v.replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>\n${pre}objectNormal = ${fn}(objectNormal, true);`)
+           .replace('#include <begin_vertex>', `#include <begin_vertex>\ntransformed = ${fn}(transformed, false);`);
+    }
+    sh.vertexShader = v;
+  };
+  mat.customProgramCacheKey = ()=>'cg2-'+kind;
+  let dep = null;
+  if (kind!=='static'){
+    dep = new THREE.MeshDepthMaterial({depthPacking: THREE.RGBADepthPacking, side: mat.side});
+    dep.onBeforeCompile = (sh)=>{
+      Object.assign(sh.uniforms, U);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n'+pars)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>\n${pre}transformed = ${fn}(transformed, false);`);
+    };
+    dep.customProgramCacheKey = ()=>'cg2d-'+kind;
+  }
+  return {mat, dep};
+}
+const RMAT = { person: makeRigMats('person'), quad: makeRigMats('quad'), static: makeRigMats('static') };
+
+/* ---------- geometry builder (metres) ---------- */
+const _gc = new Map();
+const G = (k, make)=>{ if(!_gc.has(k)) _gc.set(k, make()); return _gc.get(k); };
+const gSph = (w=8,h=6)=>G('s'+w+'_'+h, ()=>new THREE.SphereGeometry(1,w,h));
+const gHemi = (w=10,h=5)=>G('h'+w+'_'+h, ()=>new THREE.SphereGeometry(1,w,h,0,Math.PI*2,0,Math.PI/2));
+const gIco = ()=>G('ico', ()=>new THREE.IcosahedronGeometry(1,0));
+const gBox = ()=>G('box', ()=>new THREE.BoxGeometry(1,1,1));
+const gCyl = (rt,rb,seg,open)=>G(`c${rt}_${rb}_${seg}_${open?1:0}`, ()=>new THREE.CylinderGeometry(rt,rb,1,seg,1,!!open));
+const gTor = (R,t,rs,ts,arc)=>G(`t${R}_${t}_${rs}_${ts}_${arc}`, ()=>new THREE.TorusGeometry(R,t,rs,ts,arc));
+const gCap = (r,l,cs,rs)=>G(`k${r}_${l}_${cs}_${rs}`, ()=>new THREE.CapsuleGeometry(r,l,cs,rs));
+function TRS(p, r, s){ return new THREE.Matrix4().compose(new THREE.Vector3(...p), new THREE.Quaternion().setFromEuler(new THREE.Euler(...(r||[0,0,0]))), new THREE.Vector3(...(s||[1,1,1]))); }
+const _Yup = new THREE.Vector3(0,1,0);
+class Rig {
+  constructor(){ this.parts=[]; this.stack=[new THREE.Matrix4()]; }
+  push(m){ this.stack.push(this.stack[this.stack.length-1].clone().multiply(m)); return this; }
+  pop(){ this.stack.pop(); return this; }
+  add(g, m, o={}){
+    this.parts.push({g, m:this.stack[this.stack.length-1].clone().multiply(m), col:col(o.c ?? '#ffffff'), mul:o.mul ?? 1,
+      slot:o.slot ?? 0, limb:o.limb ?? 0, piv:o.piv ?? [0,0], k:o.k ?? [0,0,0,0], vfn:o.vfn});
+    return this;
+  }
+  ell(c, r, o, seg=[8,6], rot){ return this.add(gSph(seg[0],seg[1]), TRS(c, rot, r), o); }
+  ico(c, r, o){ return this.add(gIco(), TRS(c, null, [r,r,r]), o); }
+  box(c, s, o, rot){ return this.add(gBox(), TRS(c, rot, s), o); }
+  tube(p0, p1, r0, r1, o, seg=8, open=false, lat=[1,1]){
+    const a=new THREE.Vector3(...p0), b=new THREE.Vector3(...p1), d=b.clone().sub(a), len=d.length();
+    const q=new THREE.Quaternion().setFromUnitVectors(_Yup, d.clone().normalize());
+    const m=new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(0.5), q, new THREE.Vector3(lat[0], len, lat[1]));
+    return this.add(gCyl(+r1.toFixed(4), +r0.toFixed(4), seg, open), m, o);
+  }
+  lathe(pts, o, seg=12, zs=1, ps=0, pl=Math.PI*2){
+    const g = new THREE.LatheGeometry(pts.map(p=>new THREE.Vector2(p[0],p[1])), seg, ps, pl);
+    return this.add(g, TRS([0,0,0], null, [1,1,zs]), o);
+  }
+  tor(c, R, t, o, rot, seg=[4,14], arc=Math.PI*2, sc=[1,1,1]){ return this.add(gTor(R,t,seg[0],seg[1],arc), TRS(c, rot, sc), o); }
+  build(){ return mergeRig(this.parts); }
+}
+function mergeRig(parts){
+  let nv=0, ni=0;
+  for(const p of parts){ const c=p.g.attributes.position.count; nv+=c; ni += p.g.index ? p.g.index.count : c; }
+  const pos=new Float32Array(nv*3), nor=new Float32Array(nv*3), cl=new Float32Array(nv*3), rig=new Float32Array(nv*4), rig2=new Float32Array(nv*4);
+  const idx = nv>65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+  const v=new THREE.Vector3(), n=new THREE.Vector3(), nm=new THREE.Matrix3();
+  let vo=0, io=0;
+  for(const p of parts){
+    const P=p.g.attributes.position, Nn=p.g.attributes.normal, cnt=P.count;
+    nm.getNormalMatrix(p.m);
+    for(let i=0;i<cnt;i++){
+      v.fromBufferAttribute(P,i); const lx=v.x, ly=v.y, lz=v.z; v.applyMatrix4(p.m);
+      n.fromBufferAttribute(Nn,i).applyMatrix3(nm).normalize();
+      const o3=(vo+i)*3, o4=(vo+i)*4;
+      pos[o3]=v.x; pos[o3+1]=v.y; pos[o3+2]=v.z; nor[o3]=n.x; nor[o3+1]=n.y; nor[o3+2]=n.z;
+      let c=p.col, slot=p.slot, mul=p.mul;
+      if(p.vfn){ const r=p.vfn(lx,ly,lz); if(r){ if(r.c) c=r.c; if(r.slot!==undefined) slot=r.slot; if(r.mul!==undefined) mul=r.mul; } }
+      cl[o3]=c.r*mul; cl[o3+1]=c.g*mul; cl[o3+2]=c.b*mul;
+      rig[o4]=p.limb; rig[o4+1]=slot; rig[o4+2]=p.piv[0]; rig[o4+3]=p.piv[1];
+      rig2[o4]=p.k[0]; rig2[o4+1]=p.k[1]; rig2[o4+2]=p.k[2]; rig2[o4+3]=p.k[3];
+    }
+    if(p.g.index){ const I=p.g.index; for(let k=0;k<I.count;k++) idx[io+k]=I.getX(k)+vo; io+=I.count; }
+    else { for(let k=0;k<cnt;k++) idx[io+k]=vo+k; io+=cnt; }
+    vo+=cnt;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor,3));
+  g.setAttribute('color', new THREE.BufferAttribute(cl,3));
+  g.setAttribute('aRig', new THREE.BufferAttribute(rig,4));
+  g.setAttribute('aRig2', new THREE.BufferAttribute(rig2,4));
+  g.setIndex(new THREE.BufferAttribute(idx,1));
+  g.computeBoundingSphere();
   return g;
 }
-function makeCart(type){
-  const g=new THREE.Group();
-  const wood=M('#6a5038'), wheelM=M('#3b2e22');
-  const wheel=(x,z,r)=>{ const w=new THREE.Mesh(new THREE.CylinderGeometry(r,r,0.08,14), wheelM); w.rotation.x=Math.PI/2; w.position.set(x,r,z); w.castShadow=true; g.add(w); };
-  if(type==='waggon'){
-    box(g, 2.3, 0.55, 1.0, 0, 0.55, 0, wood);
-    box(g, 2.1, 0.45, 0.9, 0, 1.1, 0, M(pick(loadCols)));
-    box(g, 0.9, 0.3, 0.8, -0.4, 1.55, 0, M(pick(loadCols)));
-    wheel(-0.75,0.55,0.52); wheel(-0.75,-0.55,0.52); wheel(0.75,0.55,0.4); wheel(0.75,-0.55,0.4);
-    const hc=pick(horseCols);
-    makeHorse(g, 1.85, 0.26, 1.05, hc); makeHorse(g, 1.85, -0.26, 1.05, hc);
-    makeHorse(g, 2.95, 0.26, 1.05, pick(horseCols)); makeHorse(g, 2.95, -0.26, 1.05, pick(horseCols));
-    g.userData.len=3.6;
-  } else if(type==='cart'){
-    box(g, 1.4, 0.4, 0.8, 0, 0.5, 0, wood);
-    box(g, 1.25, 0.35, 0.7, 0, 0.9, 0, M(pick(loadCols)));
-    wheel(0,0.45,0.48); wheel(0,-0.45,0.48);
-    box(g, 0.9, 0.05, 0.05, 1.05, 0.62, 0.2, wood, {cast:false}); box(g, 0.9, 0.05, 0.05, 1.05, 0.62, -0.2, wood, {cast:false});
-    makeHorse(g, 1.35, 0, 1, pick(horseCols));
-    g.userData.len=2.2;
-  } else { // costermonger's donkey cart
-    box(g, 0.9, 0.25, 0.6, 0, 0.35, 0, wood);
-    box(g, 0.8, 0.22, 0.5, 0, 0.6, 0, M(pick(loadCols)));
-    wheel(0,0.34,0.32); wheel(0,-0.34,0.32);
-    makeHorse(g, 0.95, 0, 0.62, '#7d7064');
-    g.userData.len=1.5;
-  }
-  return g;
+// two-link leg: knee position (in the z–y plane) for hip H and ankle A, knee bending forward/up
+function knee2(H, A, l1, l2){
+  const dz=A[0]-H[0], dy=A[1]-H[1], d=Math.min(Math.hypot(dz,dy), l1+l2-1e-4);
+  const a=(l1*l1-l2*l2+d*d)/(2*d), h=Math.sqrt(Math.max(0,l1*l1-a*a));
+  const pz=H[0]+a*dz/d, py=H[1]+a*dy/d, nz=-dy/d, ny=dz/d;
+  const k1=[pz+h*nz, py+h*ny], k2=[pz-h*nz, py-h*ny];
+  return k1[1]>k2[1] ? k1 : k2;
 }
-const carts=[];
-const occupied=[]; // points blocked for people
-function tryPlaceCart(region, angleFn, show, typeWeights, tries=40){
-  for(let k=0;k<tries;k++){
-    const x=R(region[0],region[1]), z=R(region[2],region[3]);
-    const a=angleFn();
-    const dx=Math.cos(a), dz=-Math.sin(a);
-    const pts=[[x-dx*1.2,z-dz*1.2],[x,z],[x+dx*1.75,z+dz*1.75],[x+dx*3.2,z+dz*3.2]];
-    if (pts.some(([px,pz])=> (px<-17.6 && px>-22 && Math.abs(pz)<4.4) || (px>-8.6 && px<19 && Math.abs(pz)<10.8))) continue;
-    if (carts.some(c=>c.pts.some(p=>pts.some(q=>Math.hypot(p[0]-q[0],p[1]-q[1])<1.5)))) continue;
-    const r=rng(); const type = r<typeWeights[0]?'waggon': r<typeWeights[0]+typeWeights[1]?'cart':'coster';
-    const g=makeCart(type); g.scale.setScalar(1.25); g.position.set(x,0,z); g.rotation.y=a; g.visible=false; world.add(g);
-    carts.push({g, pts, show}); occupied.push(...pts); return true;
+
+/* ---------- people (metres; facing +Z; left side is +X) ---------- */
+const HAIR='#3a2a1f', WICKER=['#a3845a','#977650','#b0956a','#8c6c44'], IRON='#38383a', LEATHER='#251b15', BRASS='#a38544';
+// o: coat 'tail'|'frock'|'waist'|'jacket'|'smock'|'police'; hat 'top'|'topBig'|'police'|'cap'|'low'|'none';
+//    neck 'cloth'|'kerchief'|'collar'; carry 'umbrella'|'shoulderBasket'|'sack'|'headBasket'|'brushes'|'whip';
+//    pose 'stand'|'sit'; boy; gloves; soot; armUp 'R'; hatTilt; kc (kerchief colour)
+function man(o={}){
+  const R = new Rig();
+  const s = o.boy ? 0.79 : 1, Y = v=>v*s, hr = o.boy ? 0.097 : 0.104;
+  const stand = (o.pose ?? 'stand') === 'stand';
+  const SK = o.soot ? {c:'#3e332d'} : {slot:5};
+  const shoeC = (o.coat==='tail'||o.coat==='frock'||o.coat==='police') ? '#151312' : '#2b231d';
+  const ankle=Y(0.08), knee=Y(0.50), hip=Y(0.92), waist=Y(0.99), sh=Y(1.40), neckTop=Y(1.50);
+  const headC = neckTop + hr*0.98, headTop = headC + hr*1.1;
+  const hx=Y(0.09), shx=Y(0.205);
+  const legP=[hip,0], armP=[sh-Y(0.01),0];
+  const HL = stand ? {limb:5} : {};
+  const sleeve = o.coat==='waist' ? 3 : 1;
+  // ---- legs ----
+  if (stand){
+    for (const sd of [1,-1]){
+      const x=sd*hx, Lu={slot:2, limb:sd>0?1:2, piv:legP}, Ll={slot:2, limb:sd>0?7:8, piv:legP};
+      R.tube([x,knee-Y(0.01),0], [x,hip+Y(0.03),0], Y(0.06), Y(0.075), Lu, 7, true);
+      R.ico([x,knee,0], Y(0.06), Lu);
+      R.tube([x,ankle-Y(0.02),Y(0.01)], [x,knee,0], Y(0.047), Y(0.06), Ll, 7, true);
+      R.box([x,Y(0.033),Y(0.045)], [Y(0.085),Y(0.066),Y(0.235)], {c:shoeC, limb:sd>0?7:8, piv:legP});
+    }
+  } else {
+    const seatH=o.seatH ?? 0.44, hipY=seatH+Y(0.08), Az=Y(0.50)+(seatH<0.3?Y(0.08):0);
+    const K = knee2([0,hipY], [Az,Y(0.09)], Y(0.44), Y(0.44));
+    for (const sd of [1,-1]){
+      const x=sd*hx;
+      R.tube([x,hipY,0], [x,K[1],K[0]], Y(0.075), Y(0.063), {slot:2}, 7, true);
+      R.ico([x,K[1],K[0]], Y(0.064), {slot:2});
+      R.tube([x,K[1],K[0]], [x,Y(0.07),Az], Y(0.06), Y(0.047), {slot:2}, 7, true);
+      R.box([x,Y(0.033),Az+Y(0.045)], [Y(0.085),Y(0.066),Y(0.235)], {c:shoeC});
+    }
+    // upper body: put the hip on the seat and lean forward about it
+    R.push(new THREE.Matrix4().makeTranslation(0,hipY,0).multiply(new THREE.Matrix4().makeRotationX(o.lean ?? 0.15)).multiply(new THREE.Matrix4().makeTranslation(0,-(hip+Y(0.02)),0)));
   }
+  // ---- body ----
+  R.ell([0,hip+Y(0.02),0], [Y(0.165),Y(0.11),Y(0.115)], {slot:2}, [7,4]);
+  R.tube([0,waist-Y(0.03),0], [0,sh,0], Y(0.15), Y(0.185), {slot:1}, 10, true, [1,0.68]);
+  R.ell([0,sh-Y(0.01),0], [Y(0.205),Y(0.075),Y(0.128)], {slot:1}, [8,5]);
+  R.tube([0,sh-Y(0.03),0], [0,neckTop+Y(0.01),0], Y(0.05), Y(0.047), SK, 6, true);
+  R.ell([0,headC,Y(0.004)], [hr*0.93,hr*1.1,hr*1.0], {...SK, ...HL}, [8,7]);
+  R.box([0,headC-hr*0.12,hr*0.93], [hr*0.17,hr*0.27,hr*0.2], {...SK, mul:0.95, ...HL}, [0.3,0,0]);   // small nose (a big box read as a beak at eye level)
+  R.add(gHemi(8,4), TRS([0,headC+hr*0.05,-hr*0.04], [-0.38,0,0], [hr*0.99,hr*1.08,hr*1.04]), {c:o.soot?'#1a1716':HAIR, ...HL});
+  // coat details
+  const zr = y=>0.68*(Y(0.15)+Y(0.035)*(y-(waist-Y(0.03)))/(sh-(waist-Y(0.03))));   // torso front depth at height y
+  if (o.coat==='tail' || o.coat==='police')
+    for (const sd of [1,-1]) R.box([sd*Y(0.062),Y(0.75),-Y(0.115)], [Y(0.12),Y(0.50),Y(0.026)], {slot:1}, [0.15,0,sd*0.05]);   // tails
+  if (o.coat==='tail' || o.coat==='frock'){
+    R.box([0,Y(1.20),zr(Y(1.2))-Y(0.008)], [Y(0.11),Y(0.30),Y(0.03)], {slot:3});                                             // waistcoat
+    for (const sd of [1,-1]) R.box([sd*Y(0.072),Y(1.24),zr(Y(1.24))-Y(0.004)], [Y(0.055),Y(0.30),Y(0.022)], {slot:1, mul:0.8}, [0,0,sd*0.3]);  // lapels
+  }
+  if (o.coat==='frock') R.lathe([[Y(0.235),Y(0.50)],[Y(0.22),Y(0.62)],[Y(0.19),Y(0.82)],[Y(0.157),Y(1.0)]], {slot:1}, 12, 0.8);
+  if (o.coat==='jacket') R.lathe([[Y(0.18),Y(0.80)],[Y(0.175),Y(0.88)],[Y(0.157),Y(1.0)]], {slot:1}, 10, 0.75);
+  if (o.coat==='smock'){
+    R.lathe([[Y(0.29),Y(0.47)],[Y(0.265),Y(0.62)],[Y(0.225),Y(0.85)],[Y(0.19),Y(1.0)],[Y(0.188),Y(1.06)]], {slot:1}, 12, 0.8);
+    R.tube([0,Y(1.16),0], [0,Y(1.25),0], Y(0.168), Y(0.177), {slot:1, mul:0.86}, 10, true, [1.01,0.7]);   // smocked yoke
+  }
+  if (o.coat==='waist') R.tube([0,waist-Y(0.04),0], [0,waist+Y(0.02),0], Y(0.153), Y(0.155), {slot:1, mul:0.75}, 10, true, [1.01,0.7]);   // waistband
+  if (o.coat==='police'){
+    R.tube([0,Y(1.40),0], [0,Y(1.515),0], Y(0.07), Y(0.066), {slot:1}, 10, true);                         // high collar
+    R.tube([0,waist-Y(0.04),0], [0,waist+Y(0.025),0], Y(0.158), Y(0.16), {c:'#141210'}, 10, true, [1,0.69]);   // leather belt
+    for (let i=0;i<5;i++){ const yy=Y(1.08+i*0.065); R.box([0,yy,zr(yy)+Y(0.004)], [Y(0.02),Y(0.02),Y(0.012)], {c:'#c6c4ba'}); }   // buttons
+  }
+  if (o.neck==='cloth'){
+    R.tube([0,Y(1.425),0], [0,Y(1.505),0], Y(0.058), Y(0.055), {c:'#eeeae0'}, 7, true);
+    R.box([0,Y(1.445),Y(0.052)], [Y(0.06),Y(0.04),Y(0.03)], {c:'#eeeae0'});
+    for (const sd of [1,-1]) R.box([sd*Y(0.042),Y(1.525),Y(0.058)], [Y(0.035),Y(0.05),Y(0.012)], {c:'#f3f0e8', ...HL}, [0,sd*0.5,0]);
+  } else if (o.neck==='kerchief'){
+    R.tube([0,Y(1.42),0], [0,Y(1.485),0], Y(0.058), Y(0.054), {c:o.kc||'#7a2a22'}, 7, true);
+    R.box([0,Y(1.43),Y(0.054)], [Y(0.05),Y(0.05),Y(0.03)], {c:o.kc||'#7a2a22'}, [0.2,0,0]);
+  } else if (o.neck==='collar'){
+    R.tube([0,Y(1.43),0], [0,Y(1.49),0], Y(0.056), Y(0.06), {c:'#eeeae0'}, 7, true);
+  }
+  // ---- arms ----
+  const hand = o.gloves ? {c:'#5c4330'} : SK;
+  const cuff = (o.coat==='tail'||o.coat==='frock'||o.coat==='police');
+  const armSwing = (sd)=>{
+    const A={slot:sleeve, limb:sd>0?3:4, piv:armP};
+    const el=[sd*Y(0.228),Y(1.09),-Y(0.005)], wr=[sd*Y(0.232),Y(0.80),Y(0.035)];
+    R.tube([sd*shx,sh-Y(0.015),0], [el[0],el[1]-Y(0.02),el[2]], Y(0.058), Y(0.05), A, 7, true);
+    R.tube(el, wr, Y(0.05), Y(0.041), A, 7, true);
+    if (cuff) R.tube([wr[0],wr[1]+Y(0.02),wr[2]], [wr[0],wr[1]-Y(0.012),wr[2]], Y(0.043), Y(0.043), {c:'#ece8de', limb:A.limb, piv:armP}, 6, true);
+    R.ico([wr[0],wr[1]-Y(0.045),wr[2]+Y(0.005)], Y(0.046), {...hand, limb:A.limb, piv:armP});
+    if (o.carry==='umbrella' && sd<0){   // furled umbrella, thick (pre-1852 whalebone kind), used like a cane
+      R.tube([wr[0],wr[1]-Y(0.01),wr[2]+Y(0.01)], [sd*Y(0.25),Y(0.03),Y(0.25)], Y(0.032), Y(0.006), {c:'#26302a', limb:4, piv:armP}, 6);
+      R.tube([wr[0],wr[1]-Y(0.01),wr[2]+Y(0.01)], [wr[0],wr[1]+Y(0.06),wr[2]+Y(0.025)], Y(0.016), Y(0.016), {c:'#5a4030', limb:4, piv:armP}, 5);
+    }
+  };
+  const armFixed = (sd, el, hd)=>{
+    R.tube([sd*shx,sh-Y(0.015),0], el, Y(0.058), Y(0.05), {slot:sleeve}, 7, true);
+    R.ico(el, Y(0.052), {slot:sleeve});
+    R.tube(el, hd, Y(0.05), Y(0.041), {slot:sleeve}, 7, true);
+    R.ico(hd, Y(0.047), hand);
+  };
+  let L=true, Rt=true;
+  if (!stand){
+    L=Rt=false;
+    if (o.carry==='whip'){
+      armFixed(-1, [-Y(0.27),Y(1.18),Y(0.17)], [-Y(0.24),Y(1.22),Y(0.42)]);
+      R.tube([-Y(0.24),Y(1.20),Y(0.42)], [-Y(0.42),Y(2.45),Y(1.05)], Y(0.014), Y(0.006), {c:'#3a2a1a'}, 5);   // whip
+      armFixed(1, [Y(0.26),Y(1.13),Y(0.16)], [Y(0.14),Y(1.08),Y(0.42)]);
+    } else {
+      armFixed(1, [Y(0.24),Y(1.12),Y(0.14)], [Y(0.10),Y(1.02),Y(0.40)]);
+      armFixed(-1, [-Y(0.24),Y(1.12),Y(0.14)], [-Y(0.10),Y(1.02),Y(0.40)]);
+    }
+  }
+  if (o.carry==='shoulderBasket'){   // round basket on the right shoulder, steadied with the right hand
+    Rt=false; armFixed(-1, [-Y(0.34),Y(1.55),Y(0.07)], [-Y(0.36),Y(1.70),Y(0.17)]);
+    const a=0.45, c=[-Y(0.39),Y(1.64),0], ax=[-Math.sin(a),Math.cos(a)], h=Y(0.15);
+    R.tube([c[0]-ax[0]*h,c[1]-ax[1]*h,0], [c[0]+ax[0]*h,c[1]+ax[1]*h,0], Y(0.19), Y(0.23), {c:WICKER[0]}, 10);
+    R.ell([c[0]+ax[0]*h,c[1]+ax[1]*h,0], [Y(0.21),Y(0.06),Y(0.21)], {c:'#5c7a35'}, [8,4], [0,0,a]);
+    for (const [dx,dz] of [[0.06,0.05],[-0.05,-0.07],[0.0,0.1]]) R.ico([c[0]+ax[0]*h+Y(dx),c[1]+ax[1]*h+Y(0.06),Y(dz)], Y(0.04), {c:'#6e8f3c'});
+  }
+  if (o.carry==='sack'){             // sack across the shoulders, both hands up
+    L=Rt=false;
+    armFixed(1, [Y(0.29),Y(1.53),-Y(0.03)], [Y(0.23),Y(1.62),-Y(0.14)]);
+    armFixed(-1, [-Y(0.29),Y(1.53),-Y(0.03)], [-Y(0.23),Y(1.62),-Y(0.14)]);
+    R.add(gCap(1,2.4,3,8), TRS([0,Y(1.47),-Y(0.21)], [0,0,Math.PI/2], [Y(0.16),Y(0.16),Y(0.15)]), {c:'#9b8560'});
+  }
+  if (o.carry==='headBasket'){       // basket of produce on the head on a pad, left hand steadying it
+    L=false; armFixed(1, [Y(0.31),Y(1.56),Y(0.03)], [Y(0.25),Y(1.76),Y(0.06)]);
+    R.tor([0,headTop+Y(0.004),0], Y(0.07), Y(0.025), {c:'#8a7a5a'}, [Math.PI/2,0,0], [4,10]);
+    R.tube([0,headTop+Y(0.025),0], [0,headTop+Y(0.20),0], Y(0.22), Y(0.26), {c:WICKER[1]}, 11);
+    R.ell([0,headTop+Y(0.20),0], [Y(0.245),Y(0.07),Y(0.245)], {c:'#9a3a2a'}, [9,4]);
+  }
+  if (o.armUp==='R'){ Rt=false; armFixed(-1, [-Y(0.32),Y(1.58),Y(0.05)], [-Y(0.36),Y(1.82),Y(0.10)]); }
+  if (L) armSwing(1); if (Rt) armSwing(-1);
+  // ---- hat ----
+  R.push(TRS([o.hatDX||0, headC+hr*0.6, 0], [-0.06,0,o.hatTilt||0]));
+  if (o.hat==='top' || o.hat==='topBig' || o.hat==='police'){
+    const big = o.hat==='topBig' ? 1.2 : 1, ch = (o.hat==='police'?0.215:0.175)*(o.boy?0.95:1)*big;
+    const rb = hr*0.85*big, rt = hr*(o.hat==='police'?0.86:0.95)*big;     // beaver hat: slightly bell-shaped crown
+    R.tube([0,-0.012,0], [0,ch,0], rb, rt, {slot:4, ...HL}, 9);
+    R.tube([0,-0.016,0], [0,-0.004,0], hr*1.42*big, hr*1.42*big, {slot:4, ...HL}, 10, false, [0.92,1.08]);
+    R.tube([0,-0.004,0], [0,0.024,0], rb*1.03, rb*1.03, {slot:4, mul:0.45, ...HL}, 9, true);
+  } else if (o.hat==='cap'){
+    R.ell([0,-0.01,Y(0.005)], [hr*1.08,hr*0.5,hr*1.12], {slot:4, ...HL}, [8,4]);
+    R.box([0,-0.025,hr*1.08], [hr*1.25,hr*0.09,hr*0.62], {slot:4, mul:0.8, ...HL}, [0.22,0,0]);
+  } else if (o.hat==='low'){
+    R.tube([0,-0.01,0], [0,hr*0.85,0], hr*0.93, hr*0.86, {slot:4, ...HL}, 9);
+    R.tube([0,-0.014,0], [0,-0.002,0], hr*1.75, hr*1.75, {slot:4, ...HL}, 10);
+  }
+  R.pop();
+  if (!stand) R.pop();
+  // ---- extras that stand on the ground beside a seated figure ----
+  if (o.carry==='brushes'){   // sweep's canes, brush head and soot bag
+    R.tube([Y(0.34),0,-Y(0.06)], [Y(0.47),Y(1.30),-Y(0.25)], Y(0.024), Y(0.02), {c:'#3a3330'}, 5);
+    R.ico([Y(0.48),Y(1.36),-Y(0.26)], Y(0.13), {c:'#1b1918'});
+    R.ell([-Y(0.33),Y(0.14),Y(0.06)], [Y(0.15),Y(0.15),Y(0.13)], {c:'#2a2624'}, [8,6]);
+  }
+  return R.build();
+}
+// o: head 'bonnet'|'cap'; apron; carry 'headBasket'|'armBasket'; apronBaked (when slot B holds fruit)
+function woman(o={}){
+  const R = new Rig(); const hr=0.097, waist=0.99, sh=1.31, neckTop=1.42, headC=1.505, headTop=headC+hr*1.1;
+  const SK={slot:5}, HL={limb:5}, armP=[1.30,0], SKP={limb:6, piv:[waist,0]};
+  for (const sd of [1,-1]) R.box([sd*0.075,0.025,0.275], [0.075,0.05,0.09], {c:'#1e1a17'});   // shoe tips
+  R.lathe([[0.30,0.05],[0.288,0.24],[0.24,0.53],[0.175,0.82],[0.135,0.99]], {slot:1, ...SKP}, 12, 0.92);   // bell skirt (petticoats, no hoop)
+  if (o.apron) R.lathe([[0.311,0.17],[0.288,0.33],[0.246,0.55],[0.186,0.82],[0.146,0.985]], o.apronBaked?{c:'#e3dccb', ...SKP}:{slot:2, ...SKP}, 6, 0.92, -0.95, 1.9);
+  R.tube([0,waist-0.03,0], [0,sh,0], 0.122, 0.155, {slot:1}, 10, true, [1,0.72]);   // bodice
+  R.ell([0,sh-0.01,0], [0.165,0.06,0.115], {slot:1}, [8,5]);
+  R.ell([0,1.19,0.045], [0.12,0.075,0.075], {slot:1}, [6,4]);
+  R.tube([0,sh-0.03,0], [0,neckTop,0], 0.042, 0.04, SK, 6, true);
+  R.ell([0,headC,0.004], [hr*0.93,hr*1.1,hr*1.0], {...SK, ...HL}, [8,7]);
+  R.box([0,headC-hr*0.12,hr*0.93], [hr*0.15,hr*0.24,hr*0.18], {...SK, mul:0.95, ...HL}, [0.3,0,0]);   // small nose
+  R.add(gHemi(8,4), TRS([0,headC+hr*0.04,-hr*0.03], [-0.42,0,0], [hr*0.99,hr*1.06,hr*1.04]), {c:HAIR, ...HL});
+  // sleeves: moderate gigot (full above the elbow, narrow forearm)
+  let L=true, Rt=true;
+  const sleeveSwing = (sd)=>{
+    const A={slot:1, limb:sd>0?3:4, piv:armP};
+    R.ell([sd*0.18,1.20,0], [0.058,0.095,0.058], A, [6,5]);
+    R.tube([sd*0.195,1.11,0], [sd*0.20,0.80,0.03], 0.042, 0.034, A, 7, true);
+    R.ico([sd*0.20,0.758,0.035], 0.04, {...SK, limb:A.limb, piv:armP});
+  };
+  const sleeveFixed = (sd, el, hd)=>{
+    R.ell([sd*0.18,1.20,0], [0.058,0.095,0.058], {slot:1}, [6,5]);
+    R.tube([sd*0.19,1.13,0], el, 0.045, 0.04, {slot:1}, 7, true);
+    R.ico(el, 0.042, {slot:1});
+    R.tube(el, hd, 0.04, 0.034, {slot:1}, 7, true);
+    R.ico(hd, 0.04, SK);
+  };
+  if (o.carry==='headBasket'){
+    Rt=false; sleeveFixed(-1, [-0.30,1.46,0.03], [-0.23,1.66,0.05]);
+    R.tor([0,headTop+0.004,0], 0.07, 0.026, {c:'#8a7a5a'}, [Math.PI/2,0,0], [3,9]);     // pad ("wisp")
+    R.tube([0,headTop+0.024,0], [0,headTop+0.19,0], 0.23, 0.27, {c:WICKER[2]}, 11);
+    R.ell([0,headTop+0.19,0], [0.255,0.075,0.255], {slot:2}, [9,3]);                     // fruit
+    for (const [dx,dz,m] of [[0.09,0.06,0.8],[-0.1,0.04,1.15],[0.02,-0.11,0.9]]) R.ico([dx,headTop+0.24,dz], 0.05, {slot:2, mul:m});
+  }
+  if (o.carry==='armBasket'){
+    L=false; sleeveFixed(1, [0.25,1.07,-0.02], [0.30,1.03,0.20]);
+    R.tube([0.31,0.80,0.11], [0.31,0.95,0.11], 0.11, 0.135, {c:WICKER[3]}, 9);
+    R.ell([0.31,0.95,0.11], [0.12,0.035,0.12], {c:'#6e8a3c'}, [8,4]);
+    R.tor([0.31,0.95,0.11], 0.105, 0.012, {c:WICKER[3]}, [0,Math.PI/2,0], [3,10], Math.PI);
+  }
+  if (L) sleeveSwing(1); if (Rt) sleeveSwing(-1);
+  // shawl over the shoulders, point at the back
+  R.lathe([[0.305,1.075],[0.272,1.24],[0.182,1.365],[0.08,1.42]], {slot:3}, 10, 0.86);
+  R.tube([0,1.12,-0.13], [0,0.88,-0.135], 0.16, 0.01, {slot:3}, 4, false, [1,0.25]);
+  if (o.head==='bonnet'){   // 1830s bonnet: large round brim framing the face, high crown behind
+    R.tube([0,headC+0.005,-0.03], [0,headC+0.06,0.085], 0.108, 0.165, {slot:4, ...HL}, 12, true);
+    R.tube([0,headC-0.005,-0.035], [0,headC+0.125,-0.085], 0.088, 0.08, {slot:4, mul:0.9, ...HL}, 9);
+    for (const sd of [1,-1]) R.tube([sd*0.085,headC-0.01,0.055], [sd*0.035,headC-0.105,0.075], 0.011, 0.011, {slot:4, mul:0.6, ...HL}, 4);   // ribbons
+  } else {                  // white cap with a frill round the face
+    R.add(gHemi(8,4), TRS([0,headC+0.008,-0.006], [-0.55,0,0], [hr*1.1,hr*1.05,hr*1.12]), {slot:4, ...HL});
+    R.tor([0,headC+0.008,-0.006], hr*1.09, 0.016, {slot:4, mul:0.92, ...HL}, [Math.PI/2-0.55,0,0], [3,12], Math.PI*2, [1,1.08,1]);
+  }
+  return R.build();
+}
+// lying, curled-up vagrant (¶2): along +X (head at +X), lying on his right side, front towards +Z
+function vagrantGeo(){
+  const R=new Rig(), A={slot:1}, B={slot:2}, SK={slot:5};
+  R.ell([0.0,0.17,0.0], [0.30,0.16,0.14], A, [10,6], [0,0,0.06]);
+  R.ell([0.25,0.18,0.0], [0.12,0.16,0.15], A, [8,6]);
+  R.ell([0.46,0.15,0.05], [0.10,0.095,0.105], SK, [10,8]);
+  R.add(gHemi(), TRS([0.47,0.16,0.04], [0,0,-1.2], [0.10,0.1,0.105]), {c:HAIR});
+  R.tube([0.30,0.07,0.10], [0.50,0.05,0.15], 0.05, 0.045, A, 7);                 // arm under the head
+  R.tube([0.28,0.26,0.06], [0.14,0.22,0.17], 0.05, 0.045, A, 7);                 // arm across the chest
+  R.tube([0.14,0.22,0.17], [0.30,0.15,0.21], 0.045, 0.04, A, 7);
+  R.ico([0.32,0.14,0.22], 0.045, SK);
+  R.ell([-0.27,0.15,0.02], [0.14,0.14,0.13], B, [8,6]);
+  for (const [dy,dz] of [[0.0,0.0],[0.12,0.04]]){                                // knees drawn up
+    R.tube([-0.27,0.13+dy,0.04+dz], [-0.05,0.12+dy,0.40+dz], 0.075, 0.062, B, 8);
+    R.tube([-0.05,0.12+dy,0.40+dz], [-0.40,0.09+dy,0.43+dz], 0.06, 0.047, B, 8);
+    R.box([-0.43,0.09+dy,0.50+dz], [0.09,0.08,0.22], {c:'#2b231d'});
+  }
+  R.tube([0.72,0.0,-0.14], [0.70,0.12,-0.13], 0.09, 0.085, {slot:4}, 9);          // battered hat beside him
+  R.tube([0.72,0.0,-0.14], [0.72,0.012,-0.14], 0.15, 0.15, {slot:4}, 10);
+  return R.build();
+}
+// boy asleep on his back on top of the baskets (¶4), along +Z, head at +Z
+function boyAsleepGeo(){
+  const R=new Rig(), A={slot:1}, B={slot:2}, SK={slot:5};
+  R.ell([0,0.11,0.0], [0.15,0.09,0.25], A, [10,6]);
+  R.ell([0,0.11,0.21], [0.17,0.08,0.08], A, [8,5]);
+  R.ell([0,0.12,0.37], [0.09,0.095,0.1], SK, [10,8]);
+  R.add(gHemi(), TRS([0,0.11,0.385], [Math.PI/2+0.4,0,0], [0.095,0.1,0.1]), {c:HAIR});
+  R.ell([0,0.17,0.45], [0.10,0.05,0.10], {slot:4}, [8,5]);                          // cap pushed back
+  for (const sd of [1,-1]){                                                       // hands behind the head
+    R.tube([sd*0.15,0.12,0.22], [sd*0.24,0.15,0.40], 0.045, 0.04, A, 7);
+    R.tube([sd*0.24,0.15,0.40], [sd*0.06,0.10,0.45], 0.04, 0.035, A, 7);
+  }
+  R.ell([0,0.10,-0.24], [0.13,0.08,0.11], B, [8,6]);
+  R.tube([-0.07,0.09,-0.27], [-0.08,0.08,-0.62], 0.06, 0.052, B, 8);              // straight leg
+  R.tube([-0.08,0.08,-0.62], [-0.09,0.07,-0.93], 0.05, 0.04, B, 8);
+  R.box([-0.09,0.12,-0.97], [0.075,0.15,0.07], {c:'#2b231d'});
+  R.tube([0.07,0.09,-0.27], [0.08,0.31,-0.50], 0.06, 0.052, B, 8);                // knee raised
+  R.tube([0.08,0.31,-0.50], [0.08,0.07,-0.70], 0.05, 0.04, B, 8);
+  R.box([0.08,0.04,-0.74], [0.075,0.07,0.19], {c:'#2b231d'});
+  return R.build();
+}
+
+/* ---------- horse, donkey (metres; facing +Z; feet on y=0) ---------- */
+function horseGeo(){
+  const R=new Rig(), A={slot:1}, B={slot:2}, NK={limb:5, piv:[1.40,0.70]}, TL={limb:6, piv:[1.40,-0.95]};
+  R.ell([0,1.17,0], [0.33,0.37,0.80], A, [12,8]);                 // barrel
+  R.ell([0,1.20,0.60], [0.31,0.37,0.32], A, [10,7]);              // chest
+  R.ell([0,1.25,-0.62], [0.34,0.38,0.36], A, [10,7]);             // hindquarters
+  R.ell([0,1.47,0.40], [0.15,0.11,0.30], A, [8,5]);               // withers
+  R.tube([0,1.34,0.70], [0,1.70,0.98], 0.25, 0.19, {...A, ...NK}, 10, true, [0.72,1]);     // arched neck: lower part
+  R.tube([0,1.66,0.95], [0,1.93,1.08], 0.19, 0.14, {...A, ...NK}, 10, true, [0.72,1]);     // upper part, more upright
+  R.ell([0,1.68,0.96], [0.135,0.19,0.19], {...A, ...NK}, [8,5]);                            // smooth the bend
+  R.tube([0,1.56,0.58], [0,1.86,0.82], 0.06, 0.05, {...B, ...NK}, 6, false, [0.45,1]);      // mane along the crest
+  R.tube([0,1.85,0.81], [0,2.02,1.02], 0.05, 0.04, {...B, ...NK}, 6, false, [0.45,1]);
+  R.tube([0,1.93,1.07], [0,1.57,1.43], 0.125, 0.085, {...A, ...NK}, 10, false, [0.82,1]);   // head
+  R.ell([0,1.80,1.12], [0.10,0.12,0.12], {...A, ...NK}, [8,6]);                             // jowl
+  R.ell([0,1.54,1.445], [0.085,0.085,0.10], {...A, mul:0.62, ...NK}, [8,6]);                // muzzle
+  R.box([0,2.0,1.10], [0.05,0.08,0.06], {...B, ...NK});                                    // forelock
+  for (const sd of [1,-1]){
+    R.tube([sd*0.055,1.98,1.03], [sd*0.075,2.11,1.05], 0.035, 0.008, {...A, ...NK}, 5);    // ears
+    R.ico([sd*0.098,1.83,1.21], 0.022, {c:'#0d0b0a', ...NK});                               // eyes
+    R.box([sd*0.118,1.83,1.19], [0.012,0.075,0.085], {c:'#16120f', ...NK});                 // blinkers
+    R.tube([sd*0.10,1.61,1.36], [sd*0.125,1.86,1.0], 0.011, 0.011, {c:LEATHER, ...NK}, 4);  // reins (bit → hames)
+    R.tube([sd*0.125,1.86,1.0], [sd*0.10,1.66,0.20], 0.011, 0.011, {c:LEATHER}, 4);         // reins (→ saddle)
+  }
+  R.tube([0,1.42,-0.93], [0,1.30,-1.04], 0.07, 0.06, {...B, ...TL}, 6);                     // dock
+  R.tube([0,1.31,-1.03], [0,0.62,-1.10], 0.075, 0.04, {...B, ...TL}, 7, false, [0.6,1]);    // tail
+  // legs: 1 near fore, 2 off fore, 3 near hind, 4 off hind; 4-beat walk LH, LF, RH, RF
+  for (const L of [{id:1,x:0.17,z:0.56,f:1,o:0.25},{id:2,x:-0.17,z:0.56,f:1,o:0.75},{id:3,x:0.18,z:-0.58,f:0,o:0},{id:4,x:-0.18,z:-0.58,f:0,o:0.5}]){
+    const piv = L.f ? [1.05,L.z] : [1.15,L.z], up={limb:L.id, piv, k:[0,0,0,L.o]};
+    const kY = L.f ? 0.52 : 0.58, kZ = L.f ? L.z+0.02 : L.z-0.12, lo={limb:L.id, piv, k:[L.f?1:-1, kY, kZ, L.o]};
+    if (L.f) R.tube([L.x,1.05,L.z], [L.x,kY,kZ], 0.095, 0.065, {...A, ...up}, 8, true);
+    else     R.tube([L.x,1.15,L.z+0.03], [L.x,kY,kZ], 0.13, 0.07, {...A, ...up}, 8, true);
+    R.ell([L.x,kY,kZ], [0.066,0.072,0.075], {...A, ...up}, [6,4]);
+    const fz = kZ + (L.f ? 0.01 : 0.06);
+    R.tube([L.x,kY,kZ], [L.x,0.15,fz], 0.054, 0.047, {...B, ...lo}, 7, true);
+    R.ell([L.x,0.13,fz+0.005], [0.06,0.055,0.066], {...B, ...lo}, [6,4]);
+    R.tube([L.x,0.11,fz+0.02], [L.x,0.0,fz+0.035], 0.06, 0.075, {c:'#24201d', ...lo}, 8);   // hoof
+  }
+  // harness: collar & hames, cart saddle, girth, breeching, traces
+  R.tor([0,1.47,0.80], 0.21, 0.065, {c:LEATHER}, [-0.94,0,0], [6,14], Math.PI*2, [1,1.2,1]);
+  for (const sd of [1,-1]) R.tube([sd*0.235,1.30,0.69], [sd*0.20,1.72,0.98], 0.022, 0.02, {c:BRASS}, 5);
+  R.box([0,1.60,0.12], [0.34,0.10,0.30], {c:LEATHER});
+  R.tube([0,1.17,0.09], [0,1.17,0.15], 1, 1, {c:LEATHER}, 14, true, [0.345,0.385]);
+  R.tor([0,1.12,-0.55], 1, 0.05, {c:LEATHER}, [-Math.PI/2,0,0], [4,14], Math.PI, [0.36,0.43,1]);
+  for (const sd of [1,-1]){
+    R.tube([sd*0.25,1.30,0.66], [sd*0.36,1.22,0.30], 0.016, 0.016, {c:LEATHER}, 4);
+    R.tube([sd*0.36,1.22,0.30], [sd*0.37,1.12,-0.98], 0.016, 0.016, {c:LEATHER}, 4);
+  }
+  return R.build();
+}
+function donkeyGeo(){   // smaller, long ears, pale muzzle and belly, tufted tail; a small bell on the collar ("jingling")
+  const R=new Rig(), A={slot:1}, B={slot:2}, NK={limb:5, piv:[0.90,0.45]}, TL={limb:6, piv:[0.90,-0.62]}, PALE='#cfc6b8';
+  R.ell([0,0.76,0], [0.22,0.24,0.50], A, [12,8]);
+  R.ell([0,0.78,0.38], [0.20,0.24,0.20], A, [8,6]);
+  R.ell([0,0.81,-0.40], [0.22,0.25,0.24], A, [8,6]);
+  R.ell([0,0.62,0.0], [0.165,0.09,0.40], {c:PALE, mul:0.85}, [8,5]);                          // pale belly
+  R.tube([0,0.88,0.44], [0,1.13,0.66], 0.15, 0.10, {...A, ...NK}, 9, true, [0.7,1]);
+  R.tube([0,1.00,0.40], [0,1.23,0.64], 0.035, 0.03, {...B, ...NK}, 5, false, [0.4,1]);        // short upright mane
+  R.tube([0,1.18,0.66], [0,0.97,0.92], 0.10, 0.075, {...A, ...NK}, 9, false, [0.85,1]);       // big head
+  R.ell([0,0.95,0.94], [0.075,0.075,0.085], {c:PALE, ...NK}, [8,6]);                           // pale muzzle
+  for (const sd of [1,-1]){
+    R.tube([sd*0.05,1.20,0.63], [sd*0.10,1.46,0.60], 0.04, 0.012, {...A, ...NK}, 5, false, [1,0.6]);   // long ears
+    R.ico([sd*0.075,1.10,0.78], 0.017, {c:'#0d0b0a', ...NK});
+  }
+  R.tube([0,0.88,-0.62], [0,0.44,-0.69], 0.025, 0.02, {...A, ...TL}, 5);
+  R.ell([0,0.40,-0.69], [0.04,0.08,0.04], {...B, ...TL}, [6,4]);
+  for (const L of [{id:1,x:0.11,z:0.36,f:1,o:0.25},{id:2,x:-0.11,z:0.36,f:1,o:0.75},{id:3,x:0.12,z:-0.40,f:0,o:0},{id:4,x:-0.12,z:-0.40,f:0,o:0.5}]){
+    const piv = L.f ? [0.68,L.z] : [0.75,L.z], up={limb:L.id, piv, k:[0,0,0,L.o]};
+    const kY = L.f ? 0.36 : 0.38, kZ = L.f ? L.z : L.z-0.08, lo={limb:L.id, piv, k:[L.f?1:-1, kY, kZ, L.o]};
+    R.tube([L.x,piv[0],L.z], [L.x,kY,kZ], L.f?0.06:0.08, 0.045, {...A, ...up}, 7, true);
+    R.ell([L.x,kY,kZ], [0.045,0.05,0.05], {...A, ...up}, [6,4]);
+    R.tube([L.x,kY,kZ], [L.x,0.07,kZ+0.03], 0.034, 0.03, {...A, ...lo}, 6, true);
+    R.tube([L.x,0.075,kZ+0.035], [L.x,0.0,kZ+0.045], 0.036, 0.045, {c:'#2a2420', ...lo}, 7);
+  }
+  R.tor([0,0.95,0.50], 0.13, 0.04, {c:LEATHER}, [-0.9,0,0], [5,12], Math.PI*2, [1,1.2,1]);
+  R.ico([0,0.80,0.60], 0.032, {c:'#c8a040'});                                                   // bell
+  R.box([0,1.02,0.08], [0.24,0.07,0.22], {c:LEATHER});
+  R.tube([0,0.76,0.06], [0,0.76,0.11], 1, 1, {c:LEATHER}, 12, true, [0.235,0.255]);
+  for (const sd of [1,-1]) R.tube([sd*0.20,0.86,0.44], [sd*0.24,0.74,-0.60], 0.012, 0.012, {c:LEATHER}, 4);
+  return R.build();
+}
+
+/* ---------- wheel (unit radius in y/z, axle along x in metres) & carts (metres; facing +Z) ---------- */
+function wheelGeo(){
+  const R=new Rig(), ironC=col(IRON);
+  R.tor([0,0,0], 0.915, 0.08, {slot:2, vfn:(x,y)=> Math.hypot(x,y)>0.945 ? {slot:0, c:ironC} : null}, [0,Math.PI/2,0], [5,20]);   // felloe + iron tyre
+  for (let i=0;i<12;i++){ const a=i/12*Math.PI*2; R.box([0,Math.cos(a)*0.53,Math.sin(a)*0.53], [0.045,0.76,0.07], {slot:2}, [a,0,0]); }   // spokes
+  R.tube([-0.17,0,0], [0.17,0,0], 0.19, 0.19, {slot:2, mul:0.7}, 10);    // nave
+  for (const sd of [1,-1]) R.tube([sd*0.17,0,0], [sd*0.205,0,0], 0.10, 0.10, {c:IRON}, 8);
+  return R.build();
+}
+// loads (deterministic per variant)
+function heap(R, cx, cz, rx, rz, h, y0, lr, cr=0.135){
+  R.add(gHemi(12,5), TRS([cx,y0,cz], null, [rx,h,rz]), {slot:3, mul:0.6});
+  for (let gx=-rx+cr; gx<=rx-cr*0.8; gx+=cr*1.8) for (let gz=-rz+cr; gz<=rz-cr*0.8; gz+=cr*1.8){
+    const jx=gx+(lr()-0.5)*0.06, jz=gz+(lr()-0.5)*0.06, e=1-(jx/rx)**2-(jz/rz)**2;
+    if (e<0.04) continue;
+    R.add(gSph(7,5), TRS([cx+jx, y0+h*Math.sqrt(e)+0.015, cz+jz], [lr(),lr(),0], [cr*(0.9+lr()*0.25), cr*0.82, cr*(0.9+lr()*0.25)]), {slot:3, mul:0.82+lr()*0.38});
+  }
+}
+function basketGrid(R, xr, zr, y0, layers, lr, br=0.21, bh=0.28){
+  const st=br*2.06;
+  for (let l=0;l<layers;l++){
+    const ins = l===0 ? 0 : br*0.35*l, w=xr[1]-xr[0]-2*ins, d=zr[1]-zr[0]-2*ins;
+    const nx=Math.max(1, Math.floor((w-2*br)/st+1e-6)+1), nz=Math.max(1, Math.floor((d-2*br)/st+1e-6)+1);
+    const x0=(xr[0]+xr[1])/2-(nx-1)*st/2, z0=(zr[0]+zr[1])/2-(nz-1)*st/2;
+    for (let ix=0; ix<nx; ix++) for (let iz=0; iz<nz; iz++){
+      const yb=y0+l*bh, xx=x0+ix*st+(lr()-0.5)*0.02, zz=z0+iz*st+(lr()-0.5)*0.02;
+      R.tube([xx,yb,zz], [xx,yb+bh,zz], br*0.86, br, {c:WICKER[Math.floor(lr()*4)], mul:0.85+lr()*0.3}, 9);
+      R.ell([xx,yb+bh-0.005,zz], [br*0.9,0.06,br*0.9], {slot:3, mul:0.75+lr()*0.45}, [8,3]);
+    }
+  }
+  return y0 + layers*bh;
+}
+function sackRow(R, xr, zr, y0, lr, layers=2){
+  const r=0.17;
+  for (let l=0;l<layers;l++) for (let z=zr[0]+r+l*0.14; z<=zr[1]-r+1e-6; z+=r*2.05)
+    R.add(gCap(1,2.2,3,8), TRS([(xr[0]+xr[1])/2+(lr()-0.5)*0.08, y0+r*0.85+l*r*1.55, z], [0,lr()*0.3-0.15,Math.PI/2], [r,Math.min(1,(xr[1]-xr[0])/(4.2*r))*r,r]), {c:'#9b8560', mul:0.82+lr()*0.3});
+}
+function cartGeo(type, load){
+  const R=new Rig(), A={slot:1}, B={slot:2}, lr=mulberry32(type.length*97+load.length*13+(load.charCodeAt(0)||0));
+  if (type==='cart'){            // one-horse market cart, two wheels (r 0.68)
+    R.box([0,0.90,-0.05], [1.22,0.06,2.32], {...A, mul:0.8});
+    for (const sd of [1,-1]){ R.box([sd*0.61,1.15,-0.05], [0.04,0.46,2.32], A); R.box([sd*0.62,1.40,-0.05], [0.07,0.05,2.36], {...A, mul:0.75}); }
+    R.box([0,1.15,1.11], [1.26,0.46,0.04], A); R.box([0,1.12,-1.21], [1.26,0.40,0.04], A);
+    R.box([0,0.79,0], [1.30,0.10,0.14], B);
+    R.tube([-0.84,0.68,0], [0.84,0.68,0], 0.045, 0.045, {c:IRON}, 6);
+    for (const sd of [1,-1]){ R.tube([sd*0.50,0.82,-1.15], [sd*0.50,0.82,1.15], 0.05, 0.05, B, 6); R.tube([sd*0.50,0.82,1.15], [sd*0.43,1.21,3.42], 0.05, 0.036, B, 6); }
+    const y0=0.93, xr=[-0.57,0.57], zr=[-1.17,1.07];
+    if (load==='cabbages') heap(R, 0, -0.05, 0.57, 1.10, 0.42, y0, lr);
+    else if (load==='baskets'){ basketGrid(R, xr, zr, y0, 2, lr); }
+    else if (load==='sacks') sackRow(R, xr, zr, y0, lr);
+    else if (load==='crates'){   // wooden crates, the top ones open with produce
+      for (let l=0;l<2;l++) for (let ix=0;ix<2;ix++) for (let iz=0;iz<(l?3:4);iz++){
+        const x=-0.27+ix*0.54+(lr()-0.5)*0.03, z=-0.83+iz*0.56+l*0.28+(lr()-0.5)*0.03, y=y0+l*0.33;
+        R.box([x,y+0.16,z], [0.5,0.32,0.5], {c:'#8a6a44', mul:0.8+lr()*0.35}, [0,(lr()-0.5)*0.1,0]);
+        R.box([x,y+0.325,z], [0.42,0.03,0.42], {slot:3, mul:0.75+lr()*0.4});
+      } }
+    else { basketGrid(R, xr, [-1.17,-0.05], y0, 2, lr); heap(R, 0, 0.52, 0.55, 0.52, 0.36, y0, lr); }
+  } else if (type==='coster'){   // costermonger's small donkey cart (r 0.48)
+    R.box([0,0.62,-0.05], [0.86,0.05,1.42], {...A, mul:0.8});
+    for (const sd of [1,-1]){ R.box([sd*0.43,0.77,-0.05], [0.035,0.26,1.42], A); R.box([sd*0.435,0.91,-0.05], [0.06,0.04,1.45], {...A, mul:0.75}); }
+    R.box([0,0.77,0.66], [0.89,0.26,0.035], A); R.box([0,0.75,-0.76], [0.89,0.22,0.035], A);
+    R.box([0,0.55,0], [0.92,0.08,0.10], B);
+    R.tube([-0.62,0.48,0], [0.62,0.48,0], 0.035, 0.035, {c:IRON}, 6);
+    for (const sd of [1,-1]){ R.tube([sd*0.34,0.57,-0.72], [sd*0.34,0.57,0.66], 0.04, 0.04, B, 6); R.tube([sd*0.34,0.57,0.66], [sd*0.29,0.81,2.15], 0.04, 0.03, B, 6); }
+    const y0=0.645, xr=[-0.41,0.41], zr=[-0.73,0.63];
+    if (load==='fruit'){ basketGrid(R, xr, zr, y0, 1, lr, 0.19, 0.26); basketGrid(R, [-0.2,0.2], [-0.55,0.45], y0+0.26, 1, lr, 0.19, 0.26); }
+    else { heap(R, 0, 0.15, 0.40, 0.46, 0.30, y0, lr, 0.12); basketGrid(R, xr, [-0.73,-0.33], y0, 1, lr, 0.19, 0.26); }
+  } else {                       // heavy waggon, four wheels (rear 0.78, front 0.58), team of four in line
+    R.box([0,1.12,-0.05], [1.30,0.07,4.24], {...A, mul:0.8});
+    for (const sd of [1,-1]){
+      R.box([sd*0.76,1.46,-0.05], [0.045,0.64,4.24], A, [0,0,-sd*0.20]);
+      R.box([sd*0.83,1.78,-0.05], [0.08,0.06,4.30], {...A, mul:0.75});
+      for (const z of [-1.6,-0.5,0.6,1.6]) R.box([sd*0.80,1.46,z], [0.05,0.66,0.06], {...A, mul:0.7}, [0,0,-sd*0.20]);   // standards
+    }
+    R.box([0,1.50,2.08], [1.62,0.76,0.05], A); R.box([0,1.42,-2.18], [1.62,0.60,0.05], A);
+    R.box([0,0.80,-0.05], [0.12,0.12,2.9], B);
+    R.box([0,0.66,1.25], [1.5,0.12,0.16], B); R.box([0,0.86,-1.35], [1.5,0.12,0.16], B);
+    R.box([0,0.98,1.25], [1.30,0.18,0.18], B); R.box([0,1.02,-1.35], [1.30,0.12,0.18], B);   // bolsters
+    R.tube([-0.98,0.58,1.25], [0.98,0.58,1.25], 0.05, 0.05, {c:IRON}, 6); R.tube([-0.98,0.78,-1.35], [0.98,0.78,-1.35], 0.05, 0.05, {c:IRON}, 6);
+    for (const sd of [1,-1]) R.tube([sd*0.50,0.66,1.0], [sd*0.43,1.21,4.45], 0.055, 0.04, B, 6);       // shafts for the wheeler
+    const HZ=[3.55,6.15,8.75,11.35];
+    for (let i=1;i<4;i++) for (const sd of [1,-1]) R.tube([sd*0.37,1.12,HZ[i]-0.98], [sd*0.25,1.30,HZ[i-1]+0.66], 0.016, 0.016, {c:LEATHER}, 4);   // leaders' traces
+    const y0=1.155, xr=[-0.64,0.64];
+    if (load==='cabbages') heap(R, 0, -0.05, 0.70, 2.05, 0.70, y0, lr);
+    else if (load==='baskets'){ basketGrid(R, xr, [-2.12,2.02], y0, 3, lr, 0.2); }
+    else if (load==='driver'){   // fruit baskets (the boy sleeps on top at the back), a box seat at the front for the waggoner
+      basketGrid(R, xr, [-2.12,1.0], y0, 2, lr, 0.2); basketGrid(R, xr, [-2.12,-0.35], y0+0.56, 1, lr, 0.2);
+      R.box([-0.30,y0+0.22,1.25], [0.62,0.44,0.36], {c:'#6a5038'});
+      R.add(gCap(1,2.2,3,8), TRS([0.30,y0+0.16,1.25], [0,0,Math.PI/2], [0.16,0.13,0.16]), {c:'#9b8560'});
+    } else { basketGrid(R, xr, [-2.12,0.0], y0, 2, lr, 0.2); heap(R, 0, 1.0, 0.68, 1.0, 0.55, y0, lr); }
+  }
+  return R.build();
+}
+
+/* ---------- colours (sRGB; muted for market folk, brighter for the noon crowd) ---------- */
+const PAL = {
+  coatDark:['#1d1c1f','#232227','#2b2622','#1f2a44','#22382c','#3a2a20','#1d1c1f'],
+  coatGay:['#2a3f6a','#4a1f24','#22382c','#3a2a20','#1d1c1f','#5a4a32','#2f4f6f','#1d1c1f','#6a4a2a'],
+  trousers:['#8c8a86','#a4a09a','#c8b48c','#e6e2d6','#a89a7a','#6f6c68','#d8cfb8'],
+  waistQuiet:['#1d1c1f','#4a4a4e','#7a6a50','#d8cfb0','#5a4632'],
+  waistGay:['#c9a640','#8a2c2a','#3f6a4a','#3a5a8a','#e0d8c0','#7a3a6a','#b86a2a'],
+  hatsMen:['#141316','#141316','#141316','#2e241e','#3a2c22','#8a8278'],
+  waistW:['#4a3b2e','#5a4632','#3b3f45','#6b5a44','#4f4a3a','#2e2a26','#5a3a2e'],
+  costerJ:['#5a4632','#4a3b2e','#6b5a44','#3e3428'],
+  shirtW:['#e2dac6','#d6ccb4','#c8c6bc','#b8c0c8','#e8e2d2'],
+  trousersW:['#6a5a44','#5a4a38','#7a6a50','#4a4440','#8a7a5a','#5a5048'],
+  capsW:['#2e2a28','#3a3430','#4a4038','#24221f','#5a4a3a'],
+  smock:['#c8bfa4','#d9d2bd','#9aa2a4','#a8a080','#b8ae94'],
+  gaiter:['#4a3828','#5a4632','#3a2e24'],
+  gownM:['#6b4e3a','#5a5a62','#7a6a55','#4a5a6a','#6e3b32','#8a7a5e','#3e4a3a','#5a3a44','#6a5a3a'],
+  gownB:['#b8453a','#2f5f8f','#d9c27a','#3f7a5a','#8e4f8e','#ece6d6','#c47a3a','#a3364f','#4f7fb0','#c99ab0','#7fa0c0','#e0cf9a','#6a8f5a'],
+  gownW:['#8a5a4a','#4f6f8f','#9a8a5a','#6a7a5a','#7a5a6a','#a07a5a'],
+  apron:['#e6e0d0','#d8d0bc','#7f8ea6','#b8b0a0','#e8e4da'],
+  shawlM:['#7a2e24','#5a4a3a','#6a5a48','#3a3a44','#8a6a3a','#4a3a3a'],
+  shawlB:['#a82820','#c86a2a','#2a4a7a','#e8d8b0','#5a2a5a','#3a6a4a','#d8b860','#7a1f3a','#f0ead8'],
+  bonnetB:['#d8c48a','#cbb57a','#e2d3a2','#e8c0c8','#a8c0e0','#f0e8d8','#c0d8b0','#e0b070'],
+  bonnetM:['#cbb57a','#bba86e','#8a7a5a','#4a3a30'],
+  capW:['#efe9dc','#e6dfcf','#f2eee4'],
+  fruit:['#a8322a','#8a1f2a','#c8a83a','#7a3a6a','#b8402a','#6a8f3a'],
+  jacketBoy:['#3a3a44','#4a3b2e','#2f3f5f','#5a4a3a','#3e4a3a'],
+  trousersBoy:['#6a5a48','#8a8070','#5a5048','#a49a88'],
+  ladTrousers:['#e6e0d0','#d6cfbc','#ddd6c4'],
+};
+function colorsFor(a, bright){
+  const P=PAL;
+  switch(a){
+    case 'clerk': case 'clerkUmb': case 'gentFrock': case 'drunk':
+      return [apick(bright?P.coatGay:P.coatDark), apick(P.trousers), apick(bright?P.waistGay:P.waistQuiet), apick(P.hatsMen)];
+    case 'coster': return [apick(P.costerJ), apick(P.trousersW), apick(P.shirtW), apick(P.capsW)];
+    case 'smock': case 'waggoner': return [apick(P.smock), apick(P.gaiter), '#888888', apick(P.capsW)];
+    case 'lady': return [apick(bright?P.gownB:P.gownM), '#ffffff', apick(bright?P.shawlB:P.shawlM), apick(bright?P.bonnetB:P.bonnetM)];
+    case 'marketW': case 'marketWB': return [apick(bright?P.gownW:P.gownM), apick(P.apron), apick(bright?P.shawlB:P.shawlM), apick(P.capW)];
+    case 'fruitW': return [apick(P.gownM), apick(P.fruit), apick(P.shawlM), apick(P.capW)];
+    case 'boyCap': return [apick(P.jacketBoy), apick(P.trousersBoy), '#888888', apick(P.capsW)];
+    case 'sweep': return ['#211e1c', '#1c1a19', '#222222', '#171515'];   // sooty
+    case 'lad': return [apick(P.coatDark), apick(P.ladTrousers), apick(P.waistQuiet), '#141316'];
+    case 'police': return ['#1f2a4a', '#e6e2d8', '#141316', '#121214'];   // 1829–39: blue tail-coat, white summer trousers, top hat
+    case 'vagrant': return ['#6a5c4a', '#4a4236', '#5a5040', '#3a3430'];
+    case 'boyAsleep': return ['#d2c7a6', '#6a5a48', '#888888', '#3a3430'];   // country boy in a pale smock-frock
+    default: return [apick(P.waistW), apick(P.trousersW), apick(P.shirtW), apick(P.capsW)];   // working men, porters
+  }
+}
+
+/* ---------- archetypes: geometry + gait data (stride m, knee height m, walking speed m/s) ---------- */
+const ARCH = {
+  clerk:     {make:()=>man({coat:'tail', hat:'top', neck:'cloth', gloves:true}), stride:1.42, knee:0.50, v:[1.25,1.55]},
+  clerkUmb:  {make:()=>man({coat:'tail', hat:'top', neck:'cloth', gloves:true, carry:'umbrella'}), stride:1.42, knee:0.50, v:[1.25,1.5]},
+  gentFrock: {make:()=>man({coat:'frock', hat:'top', neck:'cloth', gloves:true}), stride:1.38, knee:0.50, v:[1.1,1.4]},
+  workerCap: {make:()=>man({coat:'waist', hat:'cap', neck:'kerchief'}), stride:1.40, knee:0.50, v:[1.2,1.5]},
+  workerHat: {make:()=>man({coat:'waist', hat:'low', neck:'kerchief', kc:'#2a3a5a'}), stride:1.40, knee:0.50, v:[1.2,1.45]},
+  coster:    {make:()=>man({coat:'jacket', hat:'cap', neck:'kerchief', kc:'#8a2a2a'}), stride:1.38, knee:0.50, v:[1.2,1.5]},
+  porterSh:  {make:()=>man({coat:'waist', hat:'cap', neck:'kerchief', kc:'#6a5a2a', carry:'shoulderBasket'}), stride:1.30, knee:0.50, v:[1.0,1.25]},
+  porterSack:{make:()=>man({coat:'waist', hat:'low', neck:'kerchief', carry:'sack'}), stride:1.25, knee:0.50, v:[0.9,1.15]},
+  porterHead:{make:()=>man({coat:'waist', hat:'none', neck:'kerchief', kc:'#4a5a3a', carry:'headBasket'}), stride:1.28, knee:0.50, v:[0.9,1.15]},
+  smock:     {make:()=>man({coat:'smock', hat:'low', neck:'kerchief', kc:'#3a4a6a'}), stride:1.36, knee:0.50, v:[1.0,1.3]},
+  lady:      {make:()=>woman({head:'bonnet'}), stride:1.15, knee:0.45, v:[1.0,1.3]},
+  marketW:   {make:()=>woman({head:'cap', apron:true}), stride:1.12, knee:0.45, v:[1.0,1.25]},
+  marketWB:  {make:()=>woman({head:'cap', apron:true, carry:'armBasket'}), stride:1.12, knee:0.45, v:[1.0,1.25]},
+  fruitW:    {make:()=>woman({head:'cap', apron:true, apronBaked:true, carry:'headBasket'}), stride:1.05, knee:0.45, v:[0.8,1.0]},
+  boyCap:    {make:()=>man({boy:true, coat:'jacket', hat:'cap', neck:'collar'}), stride:1.12, knee:0.395, v:[1.3,1.7]},
+  lad:       {make:()=>man({boy:true, coat:'tail', hat:'topBig', neck:'collar', hatTilt:0.24, hatDX:0.012}), stride:1.12, knee:0.395, v:[1.4,1.8]},
+  police:    {make:()=>man({coat:'police', hat:'police', neck:'none'}), stride:1.40, knee:0.50, v:[0.9,1.1]},
+  drunk:     {make:()=>man({coat:'tail', hat:'top', neck:'cloth', hatTilt:0.42, hatDX:0.03, armUp:'R'}), stride:1.15, knee:0.50, v:[0.5,0.6]},
+  vagrant:   {make:vagrantGeo, stride:1, knee:0.5, v:[1,1]},
+  sweep:     {make:()=>man({boy:true, coat:'jacket', hat:'cap', neck:'none', pose:'sit', seatH:0.20, soot:true, carry:'brushes', lean:0.22}), stride:1, knee:0.4, v:[1,1]},
+  waggoner:  {make:()=>man({coat:'smock', hat:'low', neck:'kerchief', pose:'sit', seatH:0.44, carry:'whip', lean:0.32}), stride:1, knee:0.5, v:[1,1]},
+  boyAsleep: {make:boyAsleepGeo, stride:1, knee:0.4, v:[1,1]},
+};
+const PROF = {
+  stall:  [['marketW',0.32],['marketWB',0.16],['workerCap',0.18],['coster',0.17],['smock',0.17]],
+  carrier:[['fruitW',0.78],['porterHead',0.22]],
+  porter: [['porterSh',0.3],['porterSack',0.2],['porterHead',0.1],['workerCap',0.15],['workerHat',0.1],['smock',0.15]],
+  throng: [['porterSh',0.13],['porterSack',0.08],['porterHead',0.08],['fruitW',0.1],['marketW',0.14],['marketWB',0.1],['workerCap',0.1],['workerHat',0.07],['coster',0.07],['smock',0.07],['boyCap',0.06]],
+  crowd:  [['clerk',0.14],['clerkUmb',0.08],['gentFrock',0.1],['lady',0.27],['marketWB',0.06],['marketW',0.05],['workerCap',0.09],['workerHat',0.05],['boyCap',0.05],['lad',0.07],['coster',0.04]],
+};
+
+/* ---------- obstacles & occupancy (per time step) ---------- */
+const STEPMASK = steps=>steps.reduce((m,s)=>m|(1<<s), 0), ALLM = 63;
+const RECTS = [   // ground occupied by buildings, walls and platforms (world x0,x1,z0,z1)
+  [-8,16,-9.05,-5.55], [-8,16,-2.15,2.15], [-8,16,5.55,9.05], [16,18.65,-9.65,9.65],     // market ranges, east terrace
+  [-21.55,-17.6,-3.75,3.75], [-45.2,-21.35,-13.2,13.2],                                   // portico platform, churchyard + church
+  [-21.5,-1.4,-19.8,-17.1], [1.4,21.0,-19.8,-17.1], [21.0,25.25,-19.8,-15.8],             // north side (shops behind the arcade)
+  [-21.5,3.8,15.8,19.8], [6.4,25.25,15.8,19.8],                                           // south side (Southampton St gap)
+  [22.3,25.25,-15.8,-1.6], [21.0,25.25,1.6,15.8],                                         // east side (Russell St gap)
+  [-45,-21.5,-19.8,-15.8], [-45,-21.5,15.8,19.8],                                         // King St / Henrietta St houses
+];
+function inRects(x,z,r){
+  for (const q of RECTS) if (x>q[0]-r && x<q[1]+r && z>q[2]-r && z<q[3]+r) return true;
+  for (const q of FILLER) if (x>q[0]-r && x<q[1]+r && z>q[2]-r && z<q[3]+r) return true;
   return false;
 }
-const along = (a)=>()=>a + R(-0.12,0.12);
-const either = (a)=>()=> (rng()<0.5?a:a+Math.PI) + R(-0.15,0.15);
-// approach streets (carts face towards the piazza): visible from "An hour wears away"
-for(let i=0;i<7;i++) tryPlaceCart([26,58,-1.0,1.0], along(Math.PI), [2,3], [0.3,0.5]);        // Russell St, heading west
-for(let i=0;i<6;i++) tryPlaceCart([-0.6,0.6,-58,-22], along(-Math.PI/2), [2,3], [0.25,0.5]);   // James St, heading south
-for(let i=0;i<3;i++) tryPlaceCart([4.9,5.6,22,48], along(Math.PI/2), i<1?[2,3]:[3], [0.2,0.5]); // Southampton St, heading north
-for(let i=0;i<3;i++) tryPlaceCart([-62,-46,-14.6,-14.0], along(0), i<1?[2,3]:[3], [0.1,0.5]);  // King St
-for(let i=0;i<3;i++) tryPlaceCart([-62,-46,14.0,14.6], along(0), i<1?[2,3]:[3], [0.1,0.5]);    // Henrietta St
-// in the piazza (around the market) — thronged at the ¶7 step
-for(let i=0;i<9;i++) tryPlaceCart([-15.4,-11.6,-10.6,10.6], ()=>R(0,Math.PI*2), i<3?[2,3]:[3], [0.15,0.45]);
-for(let i=0;i<10;i++) tryPlaceCart([-19,17,-14.6,-11.4], either(0), i<3?[2,3]:[3], [0.12,0.45]);
-for(let i=0;i<10;i++) tryPlaceCart([-19,17,11.4,14.6], either(0), i<3?[2,3]:[3], [0.12,0.45]);
-for(let i=0;i<2;i++) tryPlaceCart([19.2,19.6,-12,12], either(-Math.PI/2), [3], [0,0.2]);
+const OCC = new Map();
+function occCells(sh, fn){
+  const i0=Math.floor(Math.min(sh.x0,sh.x1)-sh.r), i1=Math.floor(Math.max(sh.x0,sh.x1)+sh.r), j0=Math.floor(Math.min(sh.z0,sh.z1)-sh.r), j1=Math.floor(Math.max(sh.z0,sh.z1)+sh.r);
+  for (let i=i0;i<=i1;i++) for (let j=j0;j<=j1;j++) if (fn(i*4096+j)) return true;
+  return false;
+}
+function segDist(a, b){   // distance between two 2D segments
+  const d1x=a.x1-a.x0, d1z=a.z1-a.z0, d2x=b.x1-b.x0, d2z=b.z1-b.z0, rx=a.x0-b.x0, rz=a.z0-b.z0;
+  const A=d1x*d1x+d1z*d1z, E=d2x*d2x+d2z*d2z, F=d2x*rx+d2z*rz;
+  let s=0, t=0;
+  if (A<1e-9 && E<1e-9) return Math.hypot(rx,rz);
+  if (A<1e-9){ t=Math.min(1,Math.max(0,F/E)); }
+  else { const C=d1x*rx+d1z*rz;
+    if (E<1e-9){ s=Math.min(1,Math.max(0,-C/A)); }
+    else { const B=d1x*d2x+d1z*d2z, den=A*E-B*B;
+      s = den>1e-9 ? Math.min(1,Math.max(0,(B*F-C*E)/den)) : 0;
+      t=(B*s+F)/E;
+      if (t<0){ t=0; s=Math.min(1,Math.max(0,-C/A)); } else if (t>1){ t=1; s=Math.min(1,Math.max(0,(B-C)/A)); } } }
+  return Math.hypot(rx+d1x*s-d2x*t, rz+d1z*s-d2z*t);
+}
+function occHit(sh){ return occCells(sh, k=>{ const a=OCC.get(k); if(!a) return false; for (const o of a) if ((o.m & sh.m) && !(sh.g && o.g===sh.g) && segDist(sh,o) < sh.r+o.r) return true; return false; }); }
+function occAdd(sh){ const seen=new Set(); occCells(sh, k=>{ if(seen.has(k)) return false; seen.add(k); let a=OCC.get(k); if(!a) OCC.set(k, a=[]); a.push(sh); return false; }); }
+function shapeBlocked(sh){
+  const n=Math.max(1, Math.ceil(Math.hypot(sh.x1-sh.x0, sh.z1-sh.z0)/0.3));
+  for (let i=0;i<=n;i++){ const t=i/n; if (inRects(sh.x0+(sh.x1-sh.x0)*t, sh.z0+(sh.z1-sh.z0)*t, sh.r)) return true; }
+  return false;
+}
+const circ = (x,z,r,m)=>({x0:x,z0:z,x1:x,z1:z,r,m});
+// static posts: lamps, market columns, arcade piers
+for (const [x,z] of LAMP_XZ) occAdd(circ(x,z,0.16,ALLM));
+for (const sd of [-1,1]) for (let i=0;i<=12;i++) occAdd(circ(-8+0.3+i*23.4/12, sd*10.3, 0.25, ALLM));
+for (const [x,z] of PIERS) occAdd(circ(x,z,0.24,ALLM));
 
-/* ---------------- people (instanced capsules + heads) ---------------- */
-const people=[];
-function freeSpot(x,z,minCart=1.15){
-  for(const p of occupied) if (Math.hypot(p[0]-x,p[1]-z)<minCart) return false;
-  return true;
-}
-function addPeople(n, regions, cat, show, extra={}){
-  let made=0, guard=0;
-  while(made<n && guard<n*60){
-    guard++;
-    const reg = regions[Math.floor(rng()*regions.length)];
-    const x=R(reg[0],reg[1]), z=R(reg[2],reg[3]);
-    if(!freeSpot(x,z)) continue;
-    if(people.some(p=>Math.abs(p.x-x)<0.55 && Math.abs(p.z-z)<0.55)) continue;
-    people.push({x,z,cat,show,rot:R(0,6.28), ...extra}); made++;
-  }
-}
+/* ---------- litter, crates, breakfast tables (as v1, now registered as obstacles) ---------- */
 const REG = {
-  fore:[-17.6,-9.2,-10.5,10.5], nlane:[-20.5,20.3,-15.2,-10.8], slane:[-20.5,20.3,10.8,15.2],
-  courts1:[-5.8,15.5,-5.3,-2.4], courts2:[-5.8,15.5,2.4,5.3], colN:[-7.6,15.6,-10.6,-9.3], colS:[-7.6,15.6,9.3,10.6],
-  elane:[19.0,20.6,-14,14], russell:[25.6,56,-1.3,1.3], james:[-1.1,1.1,-56,-21], south:[4.3,6.2,21,46],
-  king:[-60,-22.5,-15.4,-13.4], hen:[-60,-22.5,13.4,15.4], arcN:[-20.5,20.5,-17.0,-16.1], arcE:[21.2,22.4,-15,-2]
+  fore:[-17.3,-8.8,-10.6,10.6], nlane:[-20.5,20.3,-15.4,-10.9], slane:[-20.5,20.3,10.9,15.4],
+  courts1:[-5.8,15.5,-5.2,-2.5], courts2:[-5.8,15.5,2.5,5.2], colN:[-7.6,15.6,-10.0,-9.35], colS:[-7.6,15.6,9.35,10.0],
+  elane:[18.95,20.7,-14.6,14.6], russell:[26,56,-3.8,3.2], james:[-3.9,3.2,-56,-21.6], south:[3.9,6.9,21,46],
+  king:[-60,-22.5,-15.5,-13.5], hen:[-60,-22.5,13.5,15.5], arcN:[-20.5,20.5,-16.9,-16.3], arcE:[21.3,22.0,-15,-2.2]
 };
-// specials (¶2–3): policeman at street corners; houseless vagrant coiled in a paved corner; the last drunk
-people.push({x:-20.3,z:-13.9,cat:'police',show:[0,1],rot:0.6});
-people.push({x:19.6,z:12.6,cat:'police',show:[1],rot:2.4});
-people.push({x:9.2,z:-16.55,cat:'vagrant',show:[0,1],rot:0, lying:true});
-people.push({x:-6,z:12.4,cat:'drunk',show:[0],rot:0, tilt:0.32});
-// market folk
-addPeople(22, [REG.courts1,REG.courts2,REG.colN,REG.colS], 'market', [2,3,4,5]);                 // stall-holders
-addPeople(20, [REG.russell,REG.james,REG.south], 'market', [2,3], {basket:true});                // fruit-carriers (¶5)
-addPeople(30, [REG.fore,REG.nlane,REG.slane,REG.elane], 'market', [2,3]);     // early porters
-addPeople(95, [REG.fore,REG.nlane,REG.slane,REG.elane,REG.courts1,REG.courts2,REG.russell,REG.james], 'market', [3]);
-people.filter(p=>p.cat==='market' && p.basket===undefined).forEach(p=>{ p.basket = rng()<0.3; });
-// eleven o'clock / noon crowd (¶13)
-addPeople(55, [REG.fore,REG.nlane,REG.slane,REG.colN,REG.colS,REG.arcN,REG.king,REG.hen], 'crowd', [4,5]);
-addPeople(140, [REG.fore,REG.fore,REG.nlane,REG.slane], 'crowd', [5]);
-addPeople(170, [REG.fore,REG.nlane,REG.slane,REG.elane,REG.colN,REG.colS,REG.courts1,REG.courts2,REG.arcN,REG.arcE,REG.russell,REG.james,REG.south,REG.king,REG.hen], 'crowd', [5]);
-
-const PCOL = {
-  market:['#6b4e3a','#4a4a52','#7a6a55','#5b3a30','#3e4a5a','#8a7a5e','#6e3b32','#5a5040'],
-  crowd:['#b8453a','#2f5f8f','#d9c27a','#3f7a5a','#8e4f8e','#ece6d6','#c47a3a','#2e2e33','#a3364f','#4f7fb0'],
-  police:['#26335a'], vagrant:['#4d463c'], drunk:['#5d4a3a']
-};
-people.forEach(p=>{ p.col = new THREE.Color(pick(PCOL[p.cat])); p.skin = new THREE.Color(pick(['#d8b190','#c9a07c','#e0bfa0'])); });
-const NP = people.length;
-const bodyMesh = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.14, 0.34, 3, 8), new THREE.MeshStandardMaterial({roughness:0.9}), NP);
-const headMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.1, 10, 8), new THREE.MeshStandardMaterial({roughness:0.8}), NP);
-const basketMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2,0.15,0.16,10), new THREE.MeshStandardMaterial({color:0x9a7a4a, roughness:0.95}), NP);
-const hatMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.09,0.09,0.2,10), new THREE.MeshStandardMaterial({color:0x15161a, roughness:0.7}), NP);
-for(const im of [bodyMesh, headMesh, basketMesh, hatMesh]){ im.castShadow=true; im.receiveShadow=true; im.frustumCulled=false; world.add(im); }
-
-/* litter: cabbage leaves, hay-bands (¶7) */
 const litter=[];
 for(let i=0;i<170;i++){
-  const reg=pick([REG.fore,REG.nlane,REG.slane,REG.elane,REG.courts1,REG.courts2]);
-  litter.push({x:R(reg[0],reg[1]), z:R(reg[2],reg[3]), r:R(0,6.28), s:R(0.6,1.3), c:new THREE.Color(pick(['#6f8a3c','#8aa04a','#b5a55a','#5d7a34','#a08a50'])), early: i<45});
+  const reg=apick([REG.fore,REG.nlane,REG.slane,REG.elane,REG.courts1,REG.courts2]);
+  litter.push({x:AR(reg[0],reg[1]), z:AR(reg[2],reg[3]), r:AR(0,6.28), s:AR(0.6,1.3), c:new THREE.Color(apick(['#6f8a3c','#8aa04a','#b5a55a','#5d7a34','#a08a50'])), early: i<45});
 }
 const litterMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.14,0.14,0.02,7), new THREE.MeshStandardMaterial({roughness:1}), litter.length);
 litterMesh.receiveShadow=true; litterMesh.frustumCulled=false; world.add(litterMesh);
-
-/* produce in the market courts (illustrative) */
 const crates=[];
 for(let i=0;i<34;i++){
-  const reg=pick([REG.courts1,REG.courts2]); const x=R(reg[0],reg[1]), z=R(reg[2],reg[3]);
-  const c=box(world, R(0.4,0.8), R(0.3,0.5), R(0.4,0.6), x, 0, z, M(pick(loadCols))); c.rotation.y=R(0,1); c.visible=false; crates.push(c);
+  const reg=apick([REG.courts1,REG.courts2]); const x=AR(reg[0],reg[1]), z=AR(reg[2],reg[3]);
+  const w=AR(0.4,0.8), h=AR(0.3,0.5), d=AR(0.4,0.6);
+  const c=box(world, w, h, d, x, 0, z, M(apick(['#6d8a3f','#7f9a48','#c98a3a','#9c3b2f','#8a6a3e','#a8b26a']))); c.rotation.y=AR(0,1); c.visible=false; crates.push(c);
+  occAdd(circ(x, z, Math.hypot(w,d)/2, STEPMASK([2,3,4,5])));
 }
-/* "little deal tables" for a street breakfast (¶5) */
 const tables=[];
-for(const [x,z] of [[24,-2.4],[2.3,-21.5],[-17,11.5]]){
+const TABLE_XZ=[[27.6,2.85],[2.3,-21.5],[-17,11.5]];   // v1 had the first at (24,-2.4), inside the east houses
+for(const [x,z] of TABLE_XZ){
   const g=new THREE.Group(); g.position.set(x,0,z); world.add(g);
   box(g, 0.9, 0.06, 0.55, 0, 0.62, 0, M('#b89a6a')); for(const [a,b] of [[0.38,0.22],[0.38,-0.22],[-0.38,0.22],[-0.38,-0.22]]) box(g,0.05,0.62,0.05,a,0,b,M('#7a6040'),{cast:false});
   box(g, 0.2, 0.22, 0.2, 0.2, 0.68, 0, M('#7a7f86'));
   g.visible=false; tables.push(g);
+  occAdd(circ(x, z, 0.5, STEPMASK([2,3])));
 }
+// door step for the chimney-sweep boy (¶6), under the north arcade just east of James St
+const SWEEP = {x:3.2, z:-16.86};
+const sweepStep = box(world, 0.9, 0.145, 0.42, SWEEP.x, 0, -16.89, M(C.stone)); sweepStep.visible=false;
+
+// street-level close-up cameras per hour (button "Close-up", ?view=street); their spots are kept clear of figures
+const STREET = [
+  {pos:[4.4,2.3,-11.2], target:[-1.1,0.5,-17.0]},     // −1 h: policeman at the corner of James St, vagrant in a paved corner
+  {pos:[4.4,2.3,-11.2], target:[-1.1,0.5,-17.0]},     // dawn
+  {pos:[3.4,3.8,-25.5], target:[-1.3,1.05,-34.2]},     // +1 h: carts rolling down James St, fruit-carriers
+  {pos:[-8.7,2.6,-13.7], target:[-15.0,0.85,-5.6]},    // 6:30: carts, porters and basket-women before the church
+  {pos:[-8.9,2.6,8.2], target:[-14.6,0.85,-0.6]},      // 11:00
+  {pos:[-8.9,2.6,8.2], target:[-14.6,0.85,-0.6]},      // noon: the crowd before St Paul's portico
+];
+STREET.forEach((v,i)=>occAdd({x0:v.pos[0], z0:v.pos[2], x1:v.pos[0]+(v.pos[0]-v.target[0])*0.1, z1:v.pos[2]+(v.pos[2]-v.target[2])*0.1, r:1.1, m:1<<i}));
+
+/* ---------- people ---------- */
+const PEOPLE = [];
+function addPerson(arch, steps, x, z, rot, o={}){
+  const A=ARCH[arch], sc=o.sc ?? AR(0.94,1.06);
+  const p = {arch, mask:STEPMASK(steps), x, z, rot, sc, y:o.y||0, tilt:o.tilt||0,
+    cols:o.cols ?? colorsFor(arch, !!o.bright), skin:o.skin ?? AR(0,0.75),
+    mode:o.mode ?? 0, t0:o.t0 ?? AR(0,40), v:o.v ?? AR(A.v[0],A.v[1]), L:(o.Lw ?? 0)/(WPM*sc), sway:o.sway ?? AR(0.012,0.03)};
+  PEOPLE.push(p); return p;
+}
+// try to place a standing person (Lw=0) or a walker with a path of world length Lw along rot
+function tryPerson(arch, steps, x, z, rot, Lw, o={}){
+  const m=STEPMASK(steps), sh={x0:x, z0:z, x1:x+Math.sin(rot)*Lw, z1:z+Math.cos(rot)*Lw, r:o.r ?? 0.27, m};
+  if (shapeBlocked(sh) || occHit(sh)) return null;
+  occAdd(sh);
+  return addPerson(arch, steps, x, z, rot, {...o, Lw, mode: Lw>0 ? (o.mode ?? 1) : 0});
+}
+const DIRS = {   // walking directions per region (along lanes and streets)
+  nlane:()=>(arng()<0.5?1:-1)*Math.PI/2+AR(-0.25,0.25), slane:()=>(arng()<0.5?1:-1)*Math.PI/2+AR(-0.25,0.25),
+  courts1:()=>(arng()<0.5?1:-1)*Math.PI/2+AR(-0.12,0.12), courts2:()=>(arng()<0.5?1:-1)*Math.PI/2+AR(-0.12,0.12),
+  colN:()=>(arng()<0.5?1:-1)*Math.PI/2, colS:()=>(arng()<0.5?1:-1)*Math.PI/2, arcN:()=>(arng()<0.5?1:-1)*Math.PI/2,
+  elane:()=>(arng()<0.5?0:Math.PI)+AR(-0.2,0.2), arcE:()=>(arng()<0.5?0:Math.PI), james:()=>(arng()<0.5?0:Math.PI)+AR(-0.15,0.15),
+  south:()=>(arng()<0.5?0:Math.PI)+AR(-0.15,0.15), russell:()=>(arng()<0.5?1:-1)*Math.PI/2+AR(-0.15,0.15),
+  king:()=>(arng()<0.5?1:-1)*Math.PI/2+AR(-0.1,0.1), hen:()=>(arng()<0.5?1:-1)*Math.PI/2+AR(-0.1,0.1), fore:()=>AR(-Math.PI,Math.PI),
+};
+function addPeople(n, regNames, prof, steps, o={}){
+  let made=0, guard=0;
+  while (made<n && guard<n*80){
+    guard++;
+    const rn=regNames[Math.floor(arng()*regNames.length)], reg=REG[rn];
+    const x=AR(reg[0],reg[1]), z=AR(reg[2],reg[3]);
+    const walk = arng() < (o.walk ?? 0);
+    let rot=AR(-Math.PI,Math.PI), Lw=0;
+    if (walk){ rot=DIRS[rn](); Lw=AR(...(o.Lw||[1.8,4.8]));
+      const x1=x+Math.sin(rot)*Lw, z1=z+Math.cos(rot)*Lw;
+      if (x1<reg[0]-0.4 || x1>reg[1]+0.4 || z1<reg[2]-0.4 || z1>reg[3]+0.4) continue; }
+    if (tryPerson(pickW(PROF[prof]), steps, x, z, rot, Lw, {bright:o.bright})) made++;
+  }
+  return made;
+}
+function faceTo(x,z,tx,tz){ return Math.atan2(tx-x, tz-z); }
+// specials (¶2–3, ¶6)
+tryPerson('police', [0,1], -2.3, -15.2, faceTo(-2.3,-15.2,2,-6), 0, {sway:0.01});           // at the corner of James St
+tryPerson('police', [1], 19.6, 12.6, faceTo(19.6,12.6,0,4), 0, {sway:0.01});                 // south-east corner
+addPerson('vagrant', [0,1], -1.27, -18.3, Math.PI/2, {mode:0, sway:0}); occAdd(circ(-1.0,-18.4,0.7,STEPMASK([0,1])));   // coiled in a paved corner at the entrance of James St (¶2)
+tryPerson('drunk', [0], -6.6, 12.6, Math.PI/2, 2.8, {sway:0.13, tilt:0.1, v:0.5, t0:3});    // the last drunk, reeling (¶2)
+addPerson('sweep', [2], SWEEP.x, SWEEP.z, 0.0, {mode:0, sway:0.004});   // sweep on a door-step (¶6); keep the pavement in front of him clear
+occAdd({x0:SWEEP.x, z0:SWEEP.z, x1:SWEEP.x, z1:SWEEP.z+2.4, r:0.75, m:STEPMASK([2])});
+
+/* ---------- carts ---------- */
+const RIG = {   // metres in the cart frame (+Z forward): extent, half width, where the team starts, wheels [x,z,r], animals [kind,z]
+  cart:  {z0:-1.25, z1:3.97, hw:0.86, team:1.42, wheels:[[0.78,0,0.68],[-0.78,0,0.68]], animals:[['horse',2.52]], loads:['cabbages','baskets','sacks','mixed','crates']},
+  coster:{z0:-0.80, z1:2.53, hw:0.62, team:0.82, wheels:[[0.56,0,0.48],[-0.56,0,0.48]], animals:[['donkey',1.55]], loads:['fruit','veg']},
+  waggon:{z0:-2.22, z1:12.8, hw:1.02, team:2.40, wheels:[[0.86,-1.35,0.78],[-0.86,-1.35,0.78],[0.86,1.25,0.58],[-0.86,1.25,0.58]],
+          animals:[['horse',3.55],['horse',6.15],['horse',8.75],['horse',11.35]], loads:['cabbages','baskets','mixed']},
+};
+const CART_BODY=['#7a6248','#6a5038','#5b6f86','#b8a580','#7a3a2a','#4a5a3a','#8a7458','#6f6650'];   // assumed: weathered wood, faded paint
+const CART_WHEEL=['#7a2e22','#5a4030','#8a6a3a','#4a3a2a','#6a3424','#5a4a3a'];
+const PRODUCE={crates:['#a8322a','#c8a83a','#6a8f3a','#7a3a6a'], cabbages:['#4f7a34','#5d8a3c','#6a9440','#557a3a'], baskets:['#a8322a','#8a1f2a','#c8a83a','#7a3a6a','#b8402a','#6a8f3a','#c86a3a'],
+  sacks:['#8a7a5a'], mixed:['#5d8a3c','#4f7a34','#a8322a'], fruit:['#a8322a','#8a1f2a','#c8a83a','#7a3a6a'], veg:['#5d8a3c','#6a9440','#4f7a34'], driver:['#6a5a40']};
+const HORSE=[['#6b3f22','#1a1410'],['#4a2e1e','#16100c'],['#8a4e2a','#7a4424'],['#1f1b19','#141110'],['#a8a49c','#7a7670'],['#5a3a26','#1a1410'],['#7a5a3c','#2a201a']];
+const DONKEY=[['#7d7064','#3a322a'],['#8a7f72','#3a322a'],['#6e6458','#2a241e'],['#5f554c','#2a241e'],['#9a8e80','#4a4238']];
+const CARTS=[];
+function rigShapes(type, x, z, rot, m, extra=0){
+  const R=RIG[type], sx=Math.sin(rot), sz=Math.cos(rot), out=[], st=0.6/WPM;
+  for (let lz=R.z0+0.35; lz<=R.z1-0.2+1e-6; lz+=st){
+    const hw = lz < R.team ? R.hw : 0.40, wx=x+sx*lz*WPM, wz=z+sz*lz*WPM;
+    out.push(circ(wx, wz, hw*WPM+0.08+extra, m));
+  }
+  return out;
+}
+function makeCart(type, x, z, rot, steps, o={}){
+  const R=RIG[type], load=o.load ?? apick(R.loads);
+  const c = {type, load, key:type+':'+load, x, z, rot, dx:Math.sin(rot), dz:Math.cos(rot), mask:STEPMASK(steps), roll:o.roll||null,
+    cols:[o.body ?? apick(CART_BODY), apick(CART_WHEEL), apick(PRODUCE[load])],
+    wheels:R.wheels.map(([wx,wz,r])=>({x:wx, z:wz, r, a0:AR(0,6.28)})),
+    animals:R.animals.map(([k,az])=>{ const cc=apick(k==='horse'?HORSE:DONKEY); return {kind:k, z:az, cols:cc, ph0:AR(0,1), seed:AR(0,50)}; }),
+    riders:[]};
+  CARTS.push(c); return c;
+}
+function tryCart(type, x, z, rot, steps, o={}){
+  const m=STEPMASK(steps), sh=rigShapes(type, x, z, rot, m);
+  for (const s of sh) if (inRects(s.x0, s.z0, s.r) || occHit(s)) return null;
+  sh.forEach(occAdd);
+  return makeCart(type, x, z, rot, steps, o);
+}
+// approach streets: a column of carts whose front stops at (fx,fz); at +1 h they roll in from D units back (¶4)
+let GID=0;
+function convoy(fx, fz, rot, n, D, typesW, o={}){
+  const sx=Math.sin(rot), sz=Math.cos(rot), gid=++GID; let back=0; const made=[];
+  for (let i=0;i<n;i++){
+    const type = (o.first && i===0) ? o.first : pickW(typesW), R=RIG[type];
+    const a = back + R.z1*WPM, x=fx-sx*a, z=fz-sz*a;
+    const sh=rigShapes(type, x, z, rot, STEPMASK([3]));
+    const sweep={x0:x-sx*(D-R.z0*WPM), z0:z-sz*(D-R.z0*WPM), x1:x+sx*R.z1*WPM, z1:z+sz*R.z1*WPM, r:R.hw*WPM+0.08, m:STEPMASK([2]), g:gid};   // members of one column move together
+    if (sh.some(s=>inRects(s.x0,s.z0,s.r)||occHit(s)) || occHit(sweep)){ back += 1.5; continue; }
+    sh.forEach(occAdd); occAdd(sweep);
+    made.push(makeCart(type, x, z, rot, [2,3], {roll:{D, v:o.v ?? 0.55, delay:0}, load:(o.first && i===0) ? o.firstLoad : undefined}));
+    back = a - R.z0*WPM + AR(0.7,1.4);
+  }
+  return made;
+}
+// keep left (the rule of the road): westbound in Russell St on the south half, southbound in James St on the east half, etc.
+const jamesCarts = convoy(0.75, -20.6, 0, 5, 11, [['cart',0.5],['coster',0.25],['waggon',0.25]], {first:'waggon', firstLoad:'driver'});
+convoy(27.2, 0.9, -Math.PI/2, 5, 12, [['cart',0.5],['coster',0.25],['waggon',0.25]]);
+convoy(4.8, 20.4, Math.PI, 3, 9, [['cart',0.6],['coster',0.4]]);
+convoy(-24.5, -14.72, Math.PI/2, 4, 10, [['cart',0.55],['coster',0.25],['waggon',0.2]]);
+convoy(-24.5, 14.15, Math.PI/2, 4, 10, [['cart',0.55],['coster',0.3],['waggon',0.15]]);
+// the sleepy waggoner on the first waggon in James St and the boy asleep on its fruit baskets (¶4)
+if (jamesCarts[0] && jamesCarts[0].type==='waggon'){
+  jamesCarts[0].riders.push({arch:'waggoner', x:-0.30, y:1.155, z:1.36, rot:0, steps:[2]});
+  jamesCarts[0].riders.push({arch:'boyAsleep', x:0.0, y:1.155+0.56+0.28, z:-1.18, rot:0, steps:[2]});
+}
+// the market itself at half-past six (¶7): parked carts, waggons and donkey carts
+function parkCarts(n, reg, angFn, typesW, steps=[3], tries=60){
+  let made=0;
+  for (let i=0;i<n;i++) for (let k=0;k<tries;k++){
+    const c=tryCart(pickW(typesW), AR(reg[0],reg[1]), AR(reg[2],reg[3]), angFn(), steps);
+    if (c){ made++; break; }
+  }
+  return made;
+}
+const EW = ()=>(arng()<0.5?1:-1)*Math.PI/2+AR(-0.06,0.06), NS = ()=>(arng()<0.5?0:Math.PI)+AR(-0.06,0.06);
+parkCarts(5, [-19.5,18,-14.9,-14.3], EW, [['cart',0.5],['coster',0.3],['waggon',0.2]]);
+parkCarts(5, [-19.5,18,-12.2,-11.5], EW, [['cart',0.6],['coster',0.4]]);
+parkCarts(5, [-19.5,18,14.3,14.9], EW, [['cart',0.5],['coster',0.3],['waggon',0.2]]);
+parkCarts(5, [-19.5,18,11.5,12.2], EW, [['cart',0.6],['coster',0.4]]);
+parkCarts(9, [-16.4,-9.6,-10.4,10.4], ()=>Math.floor(arng()*4)*Math.PI/2+AR(-0.35,0.35), [['cart',0.6],['coster',0.4]]);
+parkCarts(2, [19.7,19.9,-13,13], NS, [['cart',0.5],['coster',0.5]]);
+// carters standing at their horses' heads
+for (const c of CARTS){
+  if (!(c.mask & 8) || c.roll || arng()>0.5) continue;
+  const R=RIG[c.type], a=c.animals[c.animals.length-1], lz=a.z+(c.type==='coster'?0.6:1.0), lx=(c.type==='coster'?0.55:0.75)*(arng()<0.5?1:-1);
+  const x=c.x+(c.dx*lz + c.dz*lx)*WPM, z=c.z+(c.dz*lz - c.dx*lx)*WPM;
+  tryPerson(apick(['smock','workerHat','workerCap','coster']), [3], x, z, faceTo(x,z,c.x+c.dx*lz*WPM,c.z+c.dz*lz*WPM), 0, {r:0.2});
+}
+
+/* ---------- the people of each hour ---------- */
+// breakfast tables (¶5): a coffee-woman and a customer or two
+for (const [x,z] of TABLE_XZ){
+  tryPerson('marketW', [2,3], x, z-0.74, 0, 0, {r:0.2});   // the coffee-woman behind her table
+  tryPerson(apick(['workerCap','smock','porterSh']), [2,3], x-0.75, z+0.45, faceTo(x-0.75,z+0.45,x,z), 0, {r:0.2});
+  tryPerson(apick(['workerHat','coster']), [2,3], x+0.7, z+0.5, faceTo(x+0.7,z+0.5,x,z), 0, {r:0.2});
+}
+// fruit-carriers with baskets on their heads, walking in a straggling line towards the market (¶5)
+function carrierLine(fx, fz, rot, n, Lw, steps){
+  const sx=Math.sin(rot), sz=Math.cos(rot), px=sz, pz=-sx; let back=0;
+  for (let i=0;i<n;i++){
+    back += AR(1.4,2.4);
+    const lat=AR(-0.35,0.35), x=fx-sx*(back+Lw)+px*lat, z=fz-sz*(back+Lw)+pz*lat;
+    tryPerson(pickW(PROF.carrier), steps, x, z, rot+AR(-0.05,0.05), Lw, {mode:2, t0:AR(0,2)});
+  }
+}
+carrierLine(-2.2, -22.0, 0, 9, 9, [2,3]);              // James St, west side, southbound
+carrierLine(30.0, -2.6, -Math.PI/2, 9, 10, [2,3]);     // Russell St, north side, westbound
+carrierLine(6.5, 21.5, Math.PI, 4, 8, [2,3]);          // Southampton St, east side, northbound
+// stall-holders in the market courts and under the colonnades (stay till noon)
+addPeople(24, ['courts1','courts2','colN','colS'], 'stall', [2,3,4,5], {walk:0.1});
+// early porters, a bricklayer's labourer and schoolboys (¶6) at +1 h
+addPeople(30, ['fore','nlane','slane','elane'], 'porter', [2,3], {walk:0.5});
+for (let i=0;i<3;i++) tryPerson('boyCap', [2], -12+i*0.7, 13.2+(i%2)*0.6, Math.PI/2, 6, {mode:2, t0:i*0.3, v:1.6});   // "on a stolen bathing expedition"
+tryPerson('workerHat', [2], 8, -12.6, -Math.PI/2, 8, {mode:2, t0:1, v:1.5});
+// half-past six: the throng (¶7) – porters, basket-women gossiping, costers, boys
+addPeople(95, ['fore','nlane','slane','elane','courts1','courts2','russell','james'], 'throng', [3], {walk:0.35});
+function gossip(n, regs, steps){
+  for (let k=0;k<n;k++) for (let t=0;t<30;t++){
+    const reg=REG[apick(regs)], cx=AR(reg[0]+0.6,reg[1]-0.6), cz=AR(reg[2]+0.6,reg[3]-0.6), m=2+Math.floor(arng()*2), a0=AR(0,6.28);
+    const pts=[]; for (let j=0;j<m;j++){ const a=a0+j*Math.PI*2/m+AR(-0.3,0.3), r=AR(0.42,0.52); pts.push([cx+Math.sin(a)*r, cz+Math.cos(a)*r]); }
+    const sh=pts.map(([x,z])=>circ(x,z,0.27,STEPMASK(steps)));
+    if (sh.some(s=>shapeBlocked(s)||occHit(s))) continue;
+    sh.forEach(occAdd);
+    pts.forEach(([x,z])=>addPerson(apick(['marketW','marketWB','fruitW','marketW']), steps, x, z, faceTo(x,z,cx,cz), {mode:0}));
+    break;
+  }
+}
+gossip(7, ['fore','nlane','slane'], [3]);
+// eleven o'clock and noon (¶13): "gay and shabby, rich and poor, idle and industrious"
+addPeople(60, ['fore','nlane','slane','colN','colS','arcN','king','hen'], 'crowd', [4,5], {walk:0.45, bright:true});
+addPeople(150, ['fore','fore','nlane','slane'], 'crowd', [5], {walk:0.4, bright:true});
+addPeople(190, ['fore','nlane','slane','elane','colN','colS','courts1','courts2','arcN','arcE','russell','james','south','king','hen'], 'crowd', [5], {walk:0.5, bright:true});
+
+/* ---------- instanced pools ---------- */
+class Pool {
+  constructor(geo, kind, cap){
+    this.kind=kind; this.cap=Math.max(1,cap);
+    const m=RMAT[kind];
+    this.mesh=new THREE.InstancedMesh(geo, m.mat, this.cap);
+    if (m.dep) this.mesh.customDepthMaterial=m.dep;
+    this.mesh.castShadow=true; this.mesh.receiveShadow=true; this.mesh.frustumCulled=false; this.mesh.count=0;
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.A={};
+    const add=(n,sz)=>{ const a=new THREE.InstancedBufferAttribute(new Float32Array(this.cap*sz), sz); a.setUsage(THREE.DynamicDrawUsage); geo.setAttribute(n,a); this.A[n]=a; };
+    if (kind==='person'){ add('iColA',3); add('iColB',3); add('iColC',3); add('iColD',3); add('iAnim',4); add('iMisc',4); }
+    else if (kind==='quad'){ add('iColA',3); add('iColB',3); add('iGait',4); }
+    else { add('iColA',3); add('iColB',3); add('iColC',3); }
+    this.tris=(geo.index ? geo.index.count : geo.attributes.position.count)/3;
+    this.n=0; world.add(this.mesh);
+  }
+  begin(){ this.n=0; }
+  next(){ return this.n++; }
+  end(){ this.mesh.count=this.n; this.mesh.instanceMatrix.needsUpdate=true; for (const k in this.A) this.A[k].needsUpdate=true; }
+  motion(){ this.mesh.instanceMatrix.needsUpdate=true; if (this.A.iGait) this.A.iGait.needsUpdate=true; }
+  setCol(name, i, h){ const c=col(h); this.A[name].setXYZ(i, c.r, c.g, c.b); }
+}
+const PPOOL={};
+{ const cnt={}; for (const p of PEOPLE) cnt[p.arch]=(cnt[p.arch]||0)+1;
+  for (const c of CARTS) for (const r of c.riders) cnt[r.arch]=(cnt[r.arch]||0)+1;
+  for (const a in cnt) PPOOL[a]=new Pool(ARCH[a].make(), 'person', cnt[a]); }
+const BODY={};
+{ const cnt={}; for (const c of CARTS) cnt[c.key]=(cnt[c.key]||0)+1;
+  for (const k in cnt){ const [t,l]=k.split(':'); BODY[k]=new Pool(cartGeo(t,l), 'static', cnt[k]); } }
+const nWheels=CARTS.reduce((s,c)=>s+c.wheels.length,0), nH=CARTS.reduce((s,c)=>s+c.animals.filter(a=>a.kind==='horse').length,0), nD=CARTS.reduce((s,c)=>s+c.animals.filter(a=>a.kind==='donkey').length,0);
+const WHEELS=new Pool(wheelGeo(), 'static', nWheels), HORSES=new Pool(horseGeo(), 'quad', nH), DONKEYS=new Pool(donkeyGeo(), 'quad', nD);
+const CART_POOLS=[...Object.values(BODY), WHEELS, HORSES, DONKEYS];
+for (const c of CARTS){ c.body=BODY[c.key]; for (const a of c.animals){ a.pool = a.kind==='horse' ? HORSES : DONKEYS; a.stride = a.kind==='horse' ? 1.75 : 1.1; } }
+
+/* ---------- writing instances ---------- */
+const _m=new THREE.Matrix4(), _m2=new THREE.Matrix4(), _m3=new THREE.Matrix4(), _q=new THREE.Quaternion(), _q2=new THREE.Quaternion(), _e=new THREE.Euler();
+const _p=new THREE.Vector3(), _p2=new THREE.Vector3(), _s=new THREE.Vector3(), _s2=new THREE.Vector3(), _X=new THREE.Vector3(1,0,0), _Yv=new THREE.Vector3(0,1,0);
+function writePerson(pool, i, p){
+  const A=ARCH[p.arch];
+  pool.setCol('iColA', i, p.cols[0]); pool.setCol('iColB', i, p.cols[1]); pool.setCol('iColC', i, p.cols[2]); pool.setCol('iColD', i, p.cols[3]);
+  pool.A.iAnim.setXYZW(i, p.mode, p.t0, p.v, p.L);
+  pool.A.iMisc.setXYZW(i, p.skin, p.sway, A.stride, A.knee);
+}
+function writePeople(s){
+  const bit=1<<s;
+  for (const k in PPOOL) PPOOL[k].begin();
+  for (const p of PEOPLE){
+    if (!(p.mask & bit)) continue;
+    const pool=PPOOL[p.arch], i=pool.next();
+    _e.set(0, p.rot, p.tilt, 'YXZ'); _q.setFromEuler(_e);
+    _p.set(p.x, GY+p.y, p.z); _s.setScalar(WPM*p.sc);
+    _m.compose(_p, _q, _s); pool.mesh.setMatrixAt(i, _m);
+    writePerson(pool, i, p);
+  }
+}
+// roll-in profile: constant speed, easing to a stop over the last 15 %. Writes ROLL_TR (distance rolled) and ROLL_SP (0..1)
+let ROLL_TR=0, ROLL_SP=0;
+function rollAt(c, ts){
+  const r=c.roll, a=0.85, k=2/(1+a), T=r.D*k/r.v, u=Math.min(1, Math.max(0, (ts-r.delay)/T));
+  ROLL_TR = r.D*(u<=a ? k*u : 1-k*(1-u)*(1-u)/(2*(1-a)));
+  ROLL_SP = ts<r.delay ? 0 : (u<=a ? 1 : (1-u)/(1-a));
+}
+const MOVERS=[];
+function placeCart(c, tr, spd, first){
+  const back = c.roll ? c.roll.D-tr : 0;
+  _p.set(c.x-c.dx*back, GY, c.z-c.dz*back); _q.setFromAxisAngle(_Yv, c.rot); _s.setScalar(WPM);
+  _m.compose(_p, _q, _s);
+  c.body.mesh.setMatrixAt(c.iBody, _m);
+  const dm = (c.roll ? tr-c.roll.D : 0)/WPM;   // metres rolled (0 at the parking place)
+  for (let k=0;k<c.wheels.length;k++){
+    const w=c.wheels[k];
+    _p2.set(w.x, w.r, w.z); _q2.setFromAxisAngle(_X, w.a0 + dm/w.r); _s2.set(1, w.r, w.r);
+    _m2.compose(_p2, _q2, _s2); _m3.multiplyMatrices(_m, _m2); WHEELS.mesh.setMatrixAt(c.iWheels[k], _m3);
+  }
+  for (let k=0;k<c.animals.length;k++){
+    const a=c.animals[k];
+    _m2.makeTranslation(0, 0, a.z); _m3.multiplyMatrices(_m, _m2); a.pool.mesh.setMatrixAt(c.iAnim[k], _m3);
+    a.pool.A.iGait.setXYZW(c.iAnim[k], dm/a.stride + a.ph0, spd, a.seed, 0);
+    if (first){ const cc=a.pool.A.iColA, cb=a.pool.A.iColB, A=col(a.cols[0]), B=col(a.cols[1]); cc.setXYZ(c.iAnim[k], A.r, A.g, A.b); cb.setXYZ(c.iAnim[k], B.r, B.g, B.b); }
+  }
+  for (const r of c.riders){
+    if (r.i<0) continue;
+    _p2.set(r.x, r.y, r.z); _q2.setFromAxisAngle(_Yv, r.rot); _s2.set(1,1,1);
+    _m2.compose(_p2, _q2, _s2); _m3.multiplyMatrices(_m, _m2); PPOOL[r.arch].mesh.setMatrixAt(r.i, _m3);
+  }
+}
+function writeCarts(s, ts){
+  const bit=1<<s;
+  for (const p of CART_POOLS) p.begin();
+  MOVERS.length=0;
+  for (const pass of [0,1]) for (const c of CARTS){       // moving carts first
+    if (!(c.mask & bit)) continue;
+    const moving = s===2 && !!c.roll;
+    if ((pass===0) !== moving) continue;
+    c.iBody=c.body.next(); c.iWheels=c.wheels.map(()=>WHEELS.next()); c.iAnim=c.animals.map(a=>a.pool.next());
+    const cc=c.cols; c.body.setCol('iColA', c.iBody, cc[0]); c.body.setCol('iColB', c.iBody, cc[1]); c.body.setCol('iColC', c.iBody, cc[2]);
+    for (const i of c.iWheels){ WHEELS.setCol('iColA', i, cc[0]); WHEELS.setCol('iColB', i, cc[1]); WHEELS.setCol('iColC', i, cc[2]); }
+    for (const r of c.riders){
+      r.i=-1;
+      if (!r.steps.includes(s)) continue;
+      const pool=PPOOL[r.arch]; r.i=pool.next();
+      writePerson(pool, r.i, r.p || (r.p={arch:r.arch, cols:colorsFor(r.arch,false), skin:AR(0.1,0.6), mode:0, t0:AR(0,20), v:1, L:0, sway:0.008}));
+    }
+    if (moving){ MOVERS.push(c); rollAt(c, ts); c.lastTr=ROLL_TR; placeCart(c, ROLL_TR, ROLL_SP, true); }
+    else placeCart(c, c.roll ? c.roll.D : 0, 0, true);
+  }
+  for (const p of CART_POOLS) p.end();
+}
+function updateMovers(ts){
+  if (!MOVERS.length) return;
+  let any=false;
+  for (const c of MOVERS){
+    rollAt(c, ts);
+    if (ROLL_TR===c.lastTr && ROLL_SP===0) continue;
+    c.lastTr=ROLL_TR; any=true; placeCart(c, ROLL_TR, ROLL_SP, false);
+  }
+  if (any){ for (const p of CART_POOLS) p.motion(); for (const c of MOVERS) for (const r of c.riders) if (r.i>=0) PPOOL[r.arch].motion(); }
+}
+function writeFigures(s, ts){
+  writePeople(s);
+  writeCarts(s, ts);
+  for (const k in PPOOL) PPOOL[k].end();
+}
+// triangles of all figures visible at a step (for the status line)
+function figTris(s){
+  const bit=1<<s; let t=0;
+  for (const p of PEOPLE) if (p.mask & bit) t+=PPOOL[p.arch].tris;
+  for (const c of CARTS) if (c.mask & bit){ t+=c.body.tris + c.wheels.length*WHEELS.tris + c.animals.reduce((a,x)=>a+x.pool.tris,0); for (const r of c.riders) if (r.steps.includes(s)) t+=PPOOL[r.arch].tris; }
+  return t;
+}
+function figCount(s){ const bit=1<<s; return PEOPLE.filter(p=>p.mask & bit).length + CARTS.reduce((a,c)=>a+((c.mask & bit) ? c.riders.filter(r=>r.steps.includes(s)).length : 0),0); }
+
 
 /* ---------------- time steps ---------------- */
 const STEPS = [
@@ -673,9 +1697,9 @@ const STEPS = [
    skyTop:'#6a9ad6', skyBot:'#e8e6dc', hemiSky:'#e6ecf5', hemiGnd:'#5e5446', hemiI:1.05, fillI:0, sunI:3.2, sunCol:'#fff0d4', exposure:0.95, lamps:0, lit:0},
 ];
 const NOTES = [
-  'Empty piazza; a policeman at a corner, a vagrant asleep under the arcade.',
+  'Empty piazza; a policeman at a street corner, a vagrant coiled in a paved corner, the last drunk reeling home (¶2–3).',
   'Still empty — “the stillness of death is over the streets” (¶2).',
-  'First carts in the approach streets; fruit-carriers with baskets (¶5).',
+  'Carts roll in along the approach streets (¶4); fruit-carriers with baskets on their heads (¶5); a sweep waits on a door-step (¶6).',
   'Market scene of ¶7 shown at the ¶8 time-marker. Numbers of carts/people are illustrative.',
   'Carts gone (¶13); stall-holders remain; “a new set of people fill the streets”.',
   'Crowd (bright colours: “gay and shabby, rich and poor”) fills the piazza (¶13).'
@@ -691,8 +1715,11 @@ function sunDir(solarHour){
 }
 function fmtSolar(h){ const H=Math.floor(h), m=Math.round((h-H)*60); return H+':'+String(m).padStart(2,'0'); }
 
-const PS=1.5; // figures enlarged ×1.5 for legibility (schematic, not to scale)
-const tmpM=new THREE.Matrix4(), tmpQ=new THREE.Quaternion(), tmpE=new THREE.Euler(), tmpS=new THREE.Vector3(PS,PS,PS), tmpP=new THREE.Vector3();
+const tmpM=new THREE.Matrix4(), tmpQ=new THREE.Quaternion(), tmpE=new THREE.Euler(), tmpP=new THREE.Vector3(), tmpS=new THREE.Vector3();
+const clock=new THREE.Clock();
+let stepT0=0;
+const SHOT_TS=[6, 6, 13, 6, 6, 6];   // frozen time within each step for ?shot=1 (carts at +1 h are half-way in)
+const SHOT_T=3.3;
 function applyStep(s){
   step=s; const S=STEPS[s];
   skyU.top.value.set(S.skyTop); skyU.bottom.value.set(S.skyBot);
@@ -709,35 +1736,17 @@ function applyStep(s){
   lamps.forEach(l=>{ l.visible=S.lamps>0; l.material.opacity=S.lamps; });
   lampHeadMat.emissiveIntensity = S.lamps>0 ? 2.2*S.lamps : 0;
   litWindows.forEach(w=>{ w.visible=S.lit>0; });
-  carts.forEach(c=>{ c.g.visible = c.show.includes(s); });
   crates.forEach(c=>{ c.visible = s>=2; });
   tables.forEach(t=>{ t.visible = (s===2||s===3); });
-  // people
-  let k=0;
-  for(const p of people){
-    if(!p.show.includes(s)) continue;
-    tmpE.set(p.lying?0:0, p.rot, p.lying?Math.PI/2:(p.tilt||0)); tmpQ.setFromEuler(tmpE);
-    if(p.lying){ tmpP.set(p.x, 0.15*PS, p.z); } else { tmpP.set(p.x, 0.31*PS, p.z); }
-    tmpM.compose(tmpP, tmpQ, tmpS); bodyMesh.setMatrixAt(k, tmpM); bodyMesh.setColorAt(k, p.col);
-    if(p.lying){ tmpP.set(p.x+0.36*PS, 0.13*PS, p.z); } else { tmpP.set(p.x + (p.tilt? Math.sin(p.tilt)*-0.25*PS:0), 0.72*PS, p.z); }
-    tmpM.compose(tmpP, tmpQ, tmpS); headMesh.setMatrixAt(k, tmpM); headMesh.setColorAt(k, p.skin);
-    k++;
-  }
-  bodyMesh.count=k; headMesh.count=k;
-  bodyMesh.instanceMatrix.needsUpdate=true; headMesh.instanceMatrix.needsUpdate=true;
-  if(bodyMesh.instanceColor) bodyMesh.instanceColor.needsUpdate=true;
-  if(headMesh.instanceColor) headMesh.instanceColor.needsUpdate=true;
-  let kb=0, kh=0;
-  for(const p of people){
-    if(!p.show.includes(s)) continue;
-    if(p.basket && !p.lying){ tmpP.set(p.x,0.88*PS,p.z); tmpM.compose(tmpP, tmpQ.identity(), tmpS); basketMesh.setMatrixAt(kb++, tmpM); }
-    if(p.cat==='police'){ tmpP.set(p.x,0.9*PS,p.z); tmpM.compose(tmpP, tmpQ.identity(), tmpS); hatMesh.setMatrixAt(kh++, tmpM); }
-  }
-  basketMesh.count=kb; hatMesh.count=kh; basketMesh.instanceMatrix.needsUpdate=true; hatMesh.instanceMatrix.needsUpdate=true;
+  sweepStep.visible = s===2;
+  // figures (people, carts, horses); time within the step restarts so that carts roll in again
+  stepT0 = clock.getElapsedTime();
+  U.uStepTime.value = SHOT ? (TSQ ?? SHOT_TS[s]) : 0;
+  writeFigures(s, U.uStepTime.value);
   // litter
   const nL = s===2 ? 45 : s===3 ? litter.length : 0; let kl=0;
   for(let i=0;i<litter.length && kl<nL;i++){ const L=litter[i]; if(s===2 && !L.early) continue;
-    tmpE.set(0,L.r,0); tmpQ.setFromEuler(tmpE); tmpP.set(L.x,0.04,L.z); tmpM.compose(tmpP,tmpQ,new THREE.Vector3(L.s,1,L.s*0.7));
+    tmpE.set(0,L.r,0); tmpQ.setFromEuler(tmpE); tmpP.set(L.x,0.04,L.z); tmpM.compose(tmpP,tmpQ,tmpS.set(L.s,1,L.s*0.7));
     litterMesh.setMatrixAt(kl, tmpM); litterMesh.setColorAt(kl, L.c); kl++; }
   litterMesh.count=kl; litterMesh.instanceMatrix.needsUpdate=true; if(litterMesh.instanceColor) litterMesh.instanceColor.needsUpdate=true;
   // caption
@@ -819,6 +1828,16 @@ function defaultView(){
   if(VIEW==='close'){ return {pos:new THREE.Vector3(-1, 15, 17).multiplyScalar(aspect<1?1.25:1), target:new THREE.Vector3(-15,1.5,-1)}; }
   return {pos:target.clone().add(off), target};
 }
+// v2: street-level close-ups chosen per hour (STREET is defined with the figures)
+function streetView(s){
+  const v=STREET[s];
+  return {pos:new THREE.Vector3(...v.pos), target:new THREE.Vector3(...v.target)};
+}
+function startView(){
+  if(CAMQ.length===6 && CAMQ.every(Number.isFinite)) return {pos:new THREE.Vector3(CAMQ[0],CAMQ[1],CAMQ[2]), target:new THREE.Vector3(CAMQ[3],CAMQ[4],CAMQ[5])};
+  if(VIEW==='street') return streetView(step);
+  return defaultView();
+}
 let tween=null;
 function setView(v, animate){
   if(!animate){ camera.position.copy(v.pos); controls.target.copy(v.target); controls.update(); return; }
@@ -832,6 +1851,7 @@ document.getElementById('slider').addEventListener('input', e=>applyStep(+e.targ
 document.getElementById('prev').onclick=()=>applyStep(Math.max(0,step-1));
 document.getElementById('next').onclick=()=>applyStep(Math.min(5,step+1));
 document.getElementById('reset').onclick=()=>setView(defaultView(), true);
+document.getElementById('closeBtn').onclick=()=>setView(streetView(step), true);
 const lblBtn=document.getElementById('lblBtn');
 lblBtn.textContent = 'Labels: '+(showLabels?'on':'off');
 lblBtn.onclick=()=>{ showLabels=!showLabels; lblBtn.textContent='Labels: '+(showLabels?'on':'off'); if(showLabels){ labelLayer.style.display=''; measureLabels(); } };
@@ -847,7 +1867,8 @@ function onResize(){
   const w=Math.max(1,app.clientWidth), h=Math.max(1,app.clientHeight);
   renderer.setSize(w,h); camera.aspect=w/h;
   // keep the model clear of the caption panel: shift the image right/up on wide screens, up on phones
-  if (w>640) camera.setViewOffset(w, h, -Math.min(170, w*0.12), Math.min(30, h*0.03), w, h);
+  if (NOUI) camera.clearViewOffset();
+  else if (w>640) camera.setViewOffset(w, h, -Math.min(170, w*0.12), Math.min(30, h*0.03), w, h);
   else camera.setViewOffset(w, h, 0, Math.min(150, h*0.17), w, h);
   camera.updateProjectionMatrix(); measureLabels();
 }
@@ -864,15 +1885,17 @@ function updateCompass(){
 
 /* ---------------- start ---------------- */
 onResize();
-setView(defaultView(), false);
 applyStep(step);
-const clock=new THREE.Clock();
+setView(startView(), false);
 function loop(){
   const t=clock.getElapsedTime();
+  if(SHOT){ U.uTime.value=SHOT_T; } else { U.uTime.value=t; U.uStepTime.value=t-stepT0; }
+  updateMovers(U.uStepTime.value);
   if(tween){ const u=Math.min(1,(performance.now()-tween.t0)/tween.dur), e=u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
     camera.position.lerpVectors(tween.p0,tween.p1,e); controls.target.lerpVectors(tween.t0v,tween.t1v,e); if(u>=1) tween=null; }
   controls.update();
-  { const d=camera.position.distanceTo(controls.target); scene.fog.near=d*0.95; scene.fog.far=d*2.6; }
+  { const d=camera.position.distanceTo(controls.target), k=Math.max(0,1-d/60);   // v2: lighter fog for street-level views; overview as v1
+    scene.fog.near=d*0.95+8*k; scene.fog.far=d*2.6+45*k; }
   if(STEPS[step].lit>0){ for(const w of litWindows){ w.material.opacity = STEPS[step].lit*(0.75+0.25*Math.sin(t*7+w.userData.phase)); } }
   renderer.render(scene,camera);
   updateLabels(); updateCompass();
@@ -881,10 +1904,22 @@ function loop(){
       document.getElementById('status').textContent += ' | shot-done px='+Array.from(px).join(',')+' lost='+gl.isContextLost()+' gl='+(gl.getParameter(gl.VERSION)); } return; }
   requestAnimationFrame(loop);
 }
-const SHOT = Q.get('shot') === '1'; let shotFrames = 0;
+let shotFrames = 0;
+window.__v2 = {CARTS, MOVERS, PEOPLE, U, applyStep, figTris, figCount};   // for console inspection / tests
+if(Q.get('bench')==='1'){   // ?bench=1: time 120 frames (GPU synchronised), report in the status line; &nofig=1 hides figures
+  if(Q.get('nofig')==='1'){ for(const p of [...Object.values(PPOOL), ...CART_POOLS]) p.mesh.visible=false; }
+  const gl=renderer.getContext(), px=new Uint8Array(4), ft=[];
+  for(let i=0;i<130;i++){ const t0=performance.now(); U.uTime.value=i/60; U.uStepTime.value=i/60; updateMovers(i/60); controls.update(); renderer.render(scene,camera); gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px); if(i>=10) ft.push(performance.now()-t0); }
+  ft.sort((a,b)=>a-b);
+  window.__bench='bench: median '+ft[ft.length>>1].toFixed(2)+' ms, p90 '+ft[Math.floor(ft.length*0.9)].toFixed(2)+' ms, calls '+renderer.info.render.calls+', tris '+renderer.info.render.triangles+', gpu '+(gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info')?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER));
+}
 loop();
 window.__ready = true;
-const st=document.getElementById('status'); if(!window.__errors.length) st.textContent='ready: step '+step+', carts '+carts.length+', people '+people.length;
+const st=document.getElementById('status');
+if(!window.__errors.length) st.textContent='ready: step '+step+', carts '+CARTS.length+', people(all steps) '+PEOPLE.length
+  +', figures/step ['+[0,1,2,3,4,5].map(figCount).join(',')+'], figure tris/step ['+[0,1,2,3,4,5].map(figTris).join(',')+']'
+  +(window.__bench ? ' | '+window.__bench : '')
+  +(Q.get('dbg')==='1' ? ' | tris: '+Object.entries(PPOOL).map(([k,p])=>k+'='+p.tris+'x'+p.cap).join(' ')+' '+Object.entries(BODY).map(([k,p])=>k+'='+p.tris+'x'+p.cap).join(' ')+' wheel='+WHEELS.tris+'x'+WHEELS.cap+' horse='+HORSES.tris+'x'+HORSES.cap+' donkey='+DONKEYS.tris+'x'+DONKEYS.cap : '');
 </script>
 </body>
 </html>
