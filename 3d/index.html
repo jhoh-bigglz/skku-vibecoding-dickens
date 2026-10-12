@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Covent Garden, 1830s</title>
+<meta name="description" content="Covent Garden, 1830s — a schematic 3D reconstruction from Dickens's 'The Streets—Morning' (prototype)">
+<style>
+  :root{
+    --ink:#f3ede2; --ink-dim:#cfc6b6; --panel:rgba(24,22,20,.78); --line:rgba(255,255,255,.14);
+    --accent:#e2b866; --market:#7a5a40; --crowd1:#b8453a; --crowd2:#2f5f8f; --police:#1f2a44;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#15171c;color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Apple SD Gothic Neo","Noto Sans KR",serif;}
+  #app{position:fixed;inset:0;}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+  header{position:absolute;top:0;left:0;right:0;padding:12px 16px 22px;pointer-events:none;
+    text-shadow:0 1px 3px rgba(0,0,0,.7);background:linear-gradient(rgba(12,12,14,.62),rgba(12,12,14,.35) 65%,rgba(12,12,14,0))}
+  header h1{margin:0;font-size:20px;line-height:1.25;font-weight:600;letter-spacing:.2px;max-width:780px}
+  header h1 .sub{display:block;font-size:14px;font-weight:400;color:var(--ink-dim);font-style:italic;margin-top:2px}
+  #labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+  .lbl{position:absolute;left:0;top:0;white-space:nowrap;padding:3px 7px 4px;border-radius:4px;
+    background:rgba(250,244,232,.92);color:#2a2420;font-size:13px;line-height:1.15;
+    box-shadow:0 1px 4px rgba(0,0,0,.35);will-change:transform}
+  .lbl b{font-weight:700}
+  .lbl small{display:block;font-size:11px;color:#5a5048}
+  .lbl.minor{background:rgba(30,28,26,.72);color:#efe6d6;font-style:italic;font-size:12px;padding:2px 6px}
+  .stem{position:absolute;left:0;top:0;width:1px;background:rgba(250,244,232,.85);will-change:transform}
+  .dot{position:absolute;left:0;top:0;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#fff3d6;box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+  #compass{position:absolute;right:16px;top:74px;width:44px;height:44px;pointer-events:none;opacity:.9}
+  #panel{position:absolute;left:16px;bottom:34px;width:440px;max-width:calc(100vw - 32px);
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px 10px;
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  .when{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  #stepName{font-size:18px;font-weight:600;color:var(--accent)}
+  #paras{font-size:12px;color:var(--ink-dim);white-space:nowrap}
+  #quoteEn{margin:6px 0 2px;font-size:15px;line-height:1.35;font-style:italic}
+  #quoteKo{margin:0 0 4px;font-size:14px;line-height:1.4;color:#efe3cc;font-family:"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+  #meta{margin:0 0 8px;font-size:11.5px;color:var(--ink-dim);font-family:-apple-system,"Helvetica Neue",Arial,sans-serif}
+  .controls{display:flex;align-items:center;gap:6px}
+  .controls input[type=range]{flex:1;min-width:60px;accent-color:var(--accent);height:28px}
+  button{font:600 12px -apple-system,"Helvetica Neue",Arial,sans-serif;color:#2a2420;background:#efe6d4;border:0;border-radius:6px;
+    padding:7px 9px;cursor:pointer;white-space:nowrap}
+  button:hover{background:#fff6e2}
+  button.icon{width:30px;padding:7px 0}
+  .ticks{display:flex;justify-content:space-between;margin:2px 36px 0 36px;font:11px -apple-system,"Helvetica Neue",Arial,sans-serif;color:var(--ink-dim)}
+  .ticks span{cursor:pointer;flex:1;text-align:center}
+  .ticks span.on{color:var(--accent);font-weight:700}
+  .row2{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;font:11px -apple-system,"Helvetica Neue",Arial,sans-serif;color:var(--ink-dim);margin-left:auto}
+  .chip{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+  footer{position:absolute;left:16px;right:16px;bottom:8px;font:11px -apple-system,"Helvetica Neue",Arial,sans-serif;color:#d8cfbf;
+    text-shadow:0 1px 2px rgba(0,0,0,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  footer a{color:var(--accent)}
+  #msg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:24px;text-align:center;
+    background:#1b1c20;color:var(--ink);font:16px/1.5 -apple-system,"Helvetica Neue",Arial,sans-serif;z-index:20}
+  #msg div{max-width:520px}
+  #err{position:absolute;right:8px;top:8px;max-width:min(460px,calc(100vw - 16px));display:none;z-index:30;
+    background:#7a1f1f;color:#fff;font:12px/1.35 Menlo,monospace;padding:8px 10px;border-radius:6px;white-space:pre-wrap}
+  #status{display:none}
+  @media (max-width:640px){
+    header{padding:8px 8px 18px}
+    header h1{font-size:15px}
+    header h1 .sub{font-size:12px}
+    #compass{top:auto;bottom:auto;top:64px;width:36px;height:36px}
+    #panel{left:8px;right:8px;width:auto;max-width:none;bottom:40px;padding:9px 10px 8px}
+    #stepName{font-size:15px}
+    #quoteEn{font-size:13px}
+    #quoteKo{font-size:12.5px}
+    #meta{display:none}
+    .ticks{margin:2px 34px 0 34px;font-size:10px}
+    .legend{display:none}
+    .lbl{font-size:11px;padding:2px 5px 3px}
+    .lbl small{display:none}
+    .lbl.minor{font-size:10px}
+    footer{white-space:normal;font-size:10px;bottom:4px;left:8px;right:8px}
+  }
+</style>
+<script>
+  // error overlay + status for headless checks (--dump-dom)
+  window.__errors = [];
+  function __report(msg){
+    window.__errors.push(String(msg));
+    var e = document.getElementById('err');
+    if (e){ e.style.display='block'; e.textContent = 'Error: ' + window.__errors.join('\n'); }
+    var s = document.getElementById('status'); if (s) s.textContent = 'errors: ' + JSON.stringify(window.__errors);
+  }
+  window.addEventListener('error', function(ev){ __report((ev.message||'resource error') + (ev.filename? ' @'+ev.filename+':'+ev.lineno:'')); }, true);
+  window.addEventListener('unhandledrejection', function(ev){ __report('Promise: ' + (ev.reason && ev.reason.message || ev.reason)); });
+  var __ce = console.error.bind(console);
+  console.error = function(){ __report([].slice.call(arguments).join(' ')); __ce.apply(null, arguments); };
+  setTimeout(function(){
+    if (!window.__ready && !window.__noWebGL){
+      var m=document.getElementById('msg');
+      if(m){ m.style.display='flex'; m.innerHTML='<div><b>The 3D view could not start.</b><br>The three.js library is loaded from unpkg.com, so an internet connection is needed. Please check the connection and reload.</div>'; }
+    }
+  }, 15000);
+</script>
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<header>
+  <h1>Covent Garden, 1830s — <span class="sub">a schematic 3D reconstruction from Dickens's 'The Streets—Morning' (prototype)</span></h1>
+</header>
+<svg id="compass" viewBox="-22 -22 44 44" aria-label="compass">
+  <circle r="20" fill="rgba(24,22,20,.7)" stroke="rgba(255,255,255,.3)"/>
+  <g id="needle"><path d="M0,-19 L5,-9 L-5,-9 Z" fill="#e2b866"/></g>
+  <text id="nletter" x="0" y="4" text-anchor="middle" font-family="Georgia,serif" font-size="11" font-weight="700" fill="#efe6d6">N</text>
+</svg>
+<div id="panel" role="region" aria-label="Time of day">
+  <div class="when"><span id="stepName">—</span><span id="paras"></span></div>
+  <p id="quoteEn"></p>
+  <p id="quoteKo"></p>
+  <p id="meta"></p>
+  <div class="controls">
+    <button class="icon" id="prev" aria-label="Earlier">‹</button>
+    <input id="slider" type="range" min="0" max="5" step="1" value="0" aria-label="Time step">
+    <button class="icon" id="next" aria-label="Later">›</button>
+  </div>
+  <div class="ticks" id="ticks"></div>
+  <div class="row2">
+    <button id="play">▶ Play</button>
+    <button id="reset">Reset view</button>
+    <button id="lblBtn">Labels: on</button>
+    <div class="legend">
+      <span><i class="chip" style="background:var(--market)"></i>market folk</span>
+      <span><i class="chip" style="background:linear-gradient(90deg,var(--crowd1) 50%,var(--crowd2) 50%)"></i>noon crowd</span>
+      <span><i class="chip" style="background:#3b4a78"></i>police</span>
+    </div>
+  </div>
+</div>
+<footer>Schematic, not to scale. Built from a prompt with an AI coding agent as a lecture prototype. Sources: see <a href="sources.md">sources.md</a></footer>
+<div id="msg"></div>
+<div id="err"></div>
+<pre id="status">loading</pre>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ---------------- WebGL check ---------------- */
+function hasWebGL(){
+  try{ const c=document.createElement('canvas');
+       return !!(window.WebGLRenderingContext && (c.getContext('webgl2')||c.getContext('webgl'))); }
+  catch(e){ return false; }
+}
+function friendly(html){ const m=document.getElementById('msg'); m.style.display='flex'; m.innerHTML='<div>'+html+'</div>'; }
+if (!hasWebGL()){
+  window.__noWebGL = true;
+  friendly('<b>This browser cannot show 3D graphics (WebGL is unavailable).</b><br>Try a recent Chrome, Safari or Firefox, or enable hardware acceleration. The screenshots in the slides show what the model looks like.');
+  document.getElementById('status').textContent='no-webgl';
+  throw new Error('__nowebgl');
+}
+
+/* ---------------- params ---------------- */
+const Q = new URLSearchParams(location.search);
+let step = Math.max(0, Math.min(5, parseInt(Q.get('t') ?? '0', 10) || 0));
+let showLabels = Q.get('labels') !== '0';
+const VIEW = Q.get('view') || 'default';
+
+/* ---------------- utilities ---------------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const rng = mulberry32(1836);  // Sketches by Boz, first series 1836
+const R = (a,b)=>a+(b-a)*rng();
+const pick = arr => arr[Math.floor(rng()*arr.length)];
+
+/* ---------------- renderer / scene ---------------- */
+const app = document.getElementById('app');
+let renderer;
+try{
+  renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
+}catch(e){
+  window.__noWebGL = true;
+  friendly('<b>3D graphics could not be started on this device.</b><br>'+String(e.message||e));
+  throw e;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+renderer.setSize(app.clientWidth, app.clientHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x2a3350, 75, 190);
+
+const camera = new THREE.PerspectiveCamera(38, Math.max(1,app.clientWidth)/Math.max(1,app.clientHeight), 0.5, 1200);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI*0.47;
+controls.minDistance = 8;
+controls.maxDistance = 220;
+
+/* sky dome */
+const skyU = { top:{value:new THREE.Color(0x0b1430)}, bottom:{value:new THREE.Color(0x2a3350)} };
+const sky = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.ShaderMaterial({
+  uniforms: skyU, side: THREE.BackSide, depthWrite:false, fog:false,
+  vertexShader:`varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+  fragmentShader:`uniform vec3 top; uniform vec3 bottom; varying vec3 vP;
+    void main(){ float h = clamp(vP.y*1.6+0.08, 0.0, 1.0); gl_FragColor = vec4(mix(bottom, top, pow(h,0.8)), 1.0); }`
+}));
+scene.add(sky);
+
+/* lights */
+const hemi = new THREE.HemisphereLight(0x8899cc, 0x2a2622, 0.6);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, 2.0);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -75; sun.shadow.camera.right = 75;
+sun.shadow.camera.top = 75; sun.shadow.camera.bottom = -75;
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 400;
+sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03;
+scene.add(sun); scene.add(sun.target);
+const fill = new THREE.DirectionalLight(0x9fb0ff, 0.0);  // night/moon fill
+fill.position.set(-40, 80, 30);
+scene.add(fill);
+
+/* ---------------- materials & textures ---------------- */
+const matCache = new Map();
+function M(color, opts={}){
+  const key = color + JSON.stringify(opts, (k,v)=> (v && v.isTexture) ? v.uuid : v);
+  if (!matCache.has(key)) matCache.set(key, new THREE.MeshStandardMaterial({color, roughness:0.9, metalness:0, ...opts}));
+  return matCache.get(key);
+}
+function canvasTex(w,h,draw){
+  const c=document.createElement('canvas'); c.width=w; c.height=h; draw(c.getContext('2d'), w, h);
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  t.anisotropy = 4; return t;
+}
+const trng = mulberry32(7);
+// one bay x one storey of an upper facade: white base (tinted by material colour), window with stone surround
+const upperBase = canvasTex(64,64,(g,w,h)=>{
+  g.fillStyle='#ffffff'; g.fillRect(0,0,w,h);
+  for(let i=0;i<70;i++){ g.fillStyle=`rgba(0,0,0,${trng()*0.07})`; g.fillRect(trng()*w, trng()*h, 7, 2); }
+  g.fillStyle='#f4efe4'; g.fillRect(19,9,26,42);
+  g.fillStyle='#2b2f37'; g.fillRect(22,12,20,36);
+  g.fillStyle='#bdb5a4'; g.fillRect(31,12,2,36); g.fillRect(22,24,20,2); g.fillRect(22,36,20,2);
+});
+// ground-floor shop front
+const shopBase = canvasTex(64,64,(g,w,h)=>{
+  g.fillStyle='#ffffff'; g.fillRect(0,0,w,h);
+  g.fillStyle='#3a3026'; g.fillRect(6,18,36,40);
+  g.fillStyle='#8f8676'; g.fillRect(6,18,36,3); g.fillRect(23,21,2,37);
+  g.fillStyle='#2a221c'; g.fillRect(46,22,12,36);
+});
+const texCache = new Map();
+function texFor(base, rx, ry){
+  const k = base.uuid+':'+rx+':'+ry;
+  if(!texCache.has(k)){ const t = base.clone(); t.repeat.set(rx, ry); t.needsUpdate = true; texCache.set(k, t); }
+  return texCache.get(k);
+}
+// paving setts
+const setts = canvasTex(256,256,(g,w,h)=>{
+  g.fillStyle='#7e7668'; g.fillRect(0,0,w,h);
+  const r=mulberry32(11);
+  for(let y=0;y<h;y+=16){ const off=(y/16)%2?12:0;
+    for(let x=-24;x<w;x+=24){ const v=Math.floor(105+r()*40); g.fillStyle=`rgb(${v+8},${v+2},${v-10})`; g.fillRect(x+off+1,y+1,22,14); } }
+});
+setts.repeat.set(14, 11);
+
+const C = {
+  brick:['#8c5d46','#9a6a4f','#7f5442','#a07457','#8a6450'],
+  stucco:['#cbb995','#d6c7a6','#bfae8c'],
+  stone:'#cdbd9c', stoneDark:'#a99a7e', slate:'#555a62', church:'#a5725a', churchRoof:'#6b5848',
+  granite:'#a9a59b', yellowBrick:'#c6ab76', shop:'#4b3d30', filler:['#5a524c','#625850','#564e49','#675c54']
+};
+
+/* ---------------- geometry helpers ---------------- */
+const unitBox = new THREE.BoxGeometry(1,1,1);
+function box(parent, w,h,d, x,y,z, mat, {cast=true, recv=true}={}){
+  const m = new THREE.Mesh(unitBox, mat);
+  m.scale.set(w,h,d); m.position.set(x, y+h/2, z);
+  m.castShadow=cast; m.receiveShadow=recv; parent.add(m); return m;
+}
+const roofGeoCache = new Map();
+function roofGeo(span, len, h){ // ridge along X
+  const k=[span,len,h].map(v=>v.toFixed(2)).join(',');
+  if(!roofGeoCache.has(k)){
+    const s=new THREE.Shape(); s.moveTo(-span/2,0); s.lineTo(span/2,0); s.lineTo(0,h); s.closePath();
+    const g=new THREE.ExtrudeGeometry(s,{depth:len, bevelEnabled:false});
+    g.translate(0,0,-len/2); g.rotateY(Math.PI/2);
+    roofGeoCache.set(k,g);
+  }
+  return roofGeoCache.get(k);
+}
+function roof(parent, span, len, h, x,y,z, mats){
+  const m=new THREE.Mesh(roofGeo(span,len,h), mats);
+  m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true; parent.add(m); return m;
+}
+
+/* ---------------- world ---------------- */
+const world = new THREE.Group(); scene.add(world);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(500,500), M('#55514b'));
+ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; world.add(ground);
+// piazza paving: x[-21.5,21], z[-15.8,15.8]  (1 unit ≈ 10 ft; piazza ≈ 420 × 316 ft per 1670 charter)
+const PZ = {x0:-21.5, x1:21, z0:-15.8, z1:15.8};
+const paving = new THREE.Mesh(new THREE.PlaneGeometry(PZ.x1-PZ.x0, PZ.z1-PZ.z0), M('#ffffff',{map:setts}));
+paving.rotation.x=-Math.PI/2; paving.position.set((PZ.x0+PZ.x1)/2, 0.02, 0); paving.receiveShadow=true; world.add(paving);
+
+/* lit windows (rushlight, ¶3) */
+const litMat = new THREE.MeshBasicMaterial({color:0xffc56b, transparent:true, opacity:1, toneMapped:false});
+const litPlane = new THREE.PlaneGeometry(1,1);
+const litWindows = [];
+
+/* row of houses in local frame: runs along +x from 0, front face at z=0 facing +z, depth back to -depth */
+const BW = 1.4, AH = 2.5, FH = 1.6, AD = 1.3;
+function houseRow(group, segs, depth=4){
+  let x = 0;
+  for(const s of segs){
+    if (s.gap){ x += s.gap; continue; }
+    const w = s.w, bays = Math.max(1, Math.round(w/BW)), floors = s.floors ?? 2;
+    const col = s.color ?? pick(C.brick);
+    const upperH = floors*FH;
+    const cx = x + w/2;
+    const upperMat = [M(col), M(col), M(col), M(col), M(col,{map:texFor(upperBase,bays,floors)}), M(col)];
+    if (s.arcade){
+      box(group, w, AH, depth-AD, cx, 0, -AD-(depth-AD)/2, [M(C.shop),M(C.shop),M(C.shop),M(C.shop),M('#c9bba0',{map:texFor(shopBase,bays,1)}),M(C.shop)]);
+      for(let i=0;i<=bays;i++){
+        const px = x + i*(w/bays);
+        box(group, 0.34, AH, 0.34, Math.min(Math.max(px, x+0.17), x+w-0.17), 0, -0.17, M(C.stone));
+      }
+      box(group, w, 0.18, AD, cx, AH-0.18, -AD/2, M(C.stoneDark), {cast:false});
+      box(group, w, 0.22, 0.12, cx, AH-0.05, 0.02, M(C.stone), {cast:false});
+    } else {
+      box(group, w, AH, depth, cx, 0, -depth/2, [M(col),M(col),M(col),M(col),M('#c9bba0',{map:texFor(shopBase,bays,1)}),M(col)]);
+    }
+    box(group, w, upperH, depth, cx, AH, -depth/2, upperMat);
+    box(group, w+0.08, 0.14, depth+0.1, cx, AH+upperH, -depth/2, M(C.stone), {cast:false});
+    const rh = s.roofH ?? 1.3;
+    roof(group, depth, w, rh, cx, AH+upperH+0.14, -depth/2, [M(C.slate), M(C.slate)]);
+    // chimney stacks at party walls
+    if (!s.noChimney){
+      box(group, 0.45, 1.1, 0.9, x+0.25, AH+upperH, -depth/2, M('#7a5040'));
+    }
+    // a few lit windows (night only)
+    for(let b=0;b<bays;b++) for(let f=0;f<floors;f++){
+      if (trng() < (s.lit ?? 0.06)){
+        const m = new THREE.Mesh(litPlane, litMat.clone());
+        m.scale.set((w/bays)*20/64, FH*36/64, 1);
+        m.position.set(x + (b+0.5)*(w/bays), AH + (f + 1 - 30/64)*FH, 0.02);
+        m.userData.phase = trng()*10; group.add(m); litWindows.push(m);
+      }
+    }
+    x += w;
+  }
+  return x;
+}
+function splitHouses(total, opts={}, sizes=[3,4,3,4,3]){
+  // split a run of `total` units into houses of 3–4 bays
+  const out=[]; let rem=total, i=0;
+  while(rem > 0.01){
+    let w = sizes[i++ % sizes.length]*BW;
+    if (rem - w < 2.5) w = rem;
+    out.push({w, ...opts, color: opts.color ?? pick(opts.arcade ? C.brick : C.brick.concat(C.stucco)),
+              floors: opts.floors ?? (rng()<0.3?3:2)});
+    rem -= w;
+  }
+  return out;
+}
+
+// NORTH side (front faces south, +z): world x -21.5 .. 25.2 ; arcades (Great Piazza), James St gap at x≈0
+{
+  const g=new THREE.Group(); g.position.set(-21.5,0,-15.8); world.add(g);
+  houseRow(g, [
+    ...splitHouses(20.1, {arcade:true, floors:2, lit:0.08}, [4,6,4]),
+    {gap:2.8},
+    ...splitHouses(19.6, {arcade:true, floors:2, lit:0.08}, [6,4,4]),
+    {w:4.2, floors:3, color:C.brick[2]}
+  ]);
+  // King St (north side), west of the piazza
+  const k=new THREE.Group(); k.position.set(-45,0,-15.8); world.add(k);
+  houseRow(k, splitHouses(23.5, {}));
+}
+// SOUTH side (front faces north): plain houses (1706–14), Southampton St gap (approx.)
+{
+  const g=new THREE.Group(); g.position.set(25.2,0,15.8); g.rotation.y=Math.PI; world.add(g);
+  houseRow(g, [
+    {w:4.2, floors:3, color:C.stucco[1]},
+    ...splitHouses(14.6, {}),
+    {gap:2.6},
+    ...splitHouses(25.3, {})
+  ]);
+  const h=new THREE.Group(); h.position.set(-21.5,0,15.8); h.rotation.y=Math.PI; world.add(h);
+  houseRow(h, splitHouses(23.5, {}));
+}
+// EAST side (front faces west): Great Piazza arcades north of Russell St; Little Piazza (no arcades after 1769 fire) with the Hummums
+{
+  const g=new THREE.Group(); g.position.set(21,0,-15.8); g.rotation.y=-Math.PI/2; world.add(g);
+  houseRow(g, [
+    ...splitHouses(14.2, {arcade:true, floors:2, lit:0.08}, [4,3,3]),
+    {gap:3.2},
+    {w:5.0, floors:3, color:'#d9c9a3', roofH:1.1, lit:0.12},   // the Hummums (approx. site)
+    ...splitHouses(9.2, {}),
+  ]);
+}
+
+/* St Paul's Church — body west of the piazza, Tuscan portico facing east */
+const church = new THREE.Group(); world.add(church);
+{
+  const x0=-34.8, x1=-21.5, w=6.8, H=5.4;
+  box(church, x1-x0, H, w, (x0+x1)/2, 0, 0, [M(C.church),M(C.church),M(C.church),M(C.church),M(C.church),M(C.church)]);
+  // tall round-headed windows suggested by dark strips
+  for(let i=0;i<4;i++){ const x = x0+2+i*3.0;
+    box(church, 1.0, 2.8, 0.06, x, 1.6, w/2+0.01, M('#2c2a2c'), {cast:false});
+    box(church, 1.0, 2.8, 0.06, x, 1.6, -w/2-0.01, M('#2c2a2c'), {cast:false}); }
+  // portico
+  box(church, 3.6, 0.3, 7.4, -19.7, 0, 0, M(C.stone));
+  const colMat = M('#d8c9a8');
+  const colGeo = new THREE.CylinderGeometry(0.28, 0.33, 4.6, 16);
+  for(const z of [-1.15, 1.15]){ const c=new THREE.Mesh(colGeo,colMat); c.position.set(-18.5, 0.3+2.3, z); c.castShadow=c.receiveShadow=true; church.add(c); }
+  for(const z of [-3.3, 3.3]) box(church, 0.62, 4.6, 0.62, -18.5, 0.3, z, colMat);
+  box(church, 3.8, 0.5, 7.4, -19.6, 4.9, 0, M(C.stone));
+  // broad eaves: roof runs out beyond the portico
+  roof(church, 8.0, (x1-x0)+3.6+1.0, 2.3, (x0 + (-17.4))/2, 5.4, 0, [M(C.stone), M(C.churchRoof)]);
+  // churchyard (grass) and low walls
+  const yard = new THREE.Mesh(new THREE.PlaneGeometry(23.5, 26), M('#5d6a48'));
+  yard.rotation.x=-Math.PI/2; yard.position.set(-33.25, 0.03, 0); yard.receiveShadow=true; world.add(yard);
+  const wall=M('#8a7a64');
+  box(world, 23.5, 0.7, 0.3, -33.25, 0, -13, wall); box(world, 23.5, 0.7, 0.3, -33.25, 0, 13, wall);
+  box(world, 0.3, 0.7, 9.4, -21.5, 0, -8.3, wall); box(world, 0.3, 0.7, 9.4, -21.5, 0, 8.3, wall);
+}
+
+/* Fowler's market building (1828–30): three parallel E–W ranges, Tuscan colonnades N & S, terrace + conservatories at E end */
+const market = new THREE.Group(); world.add(market);
+{
+  const x0=-8, x1=16, L=x1-x0, cx=(x0+x1)/2;
+  const brickMats = (c)=>[M(c),M(c),M(c),M(c),M(c,{map:texFor(shopBase, 10, 1)}),M(c,{map:texFor(shopBase, 10, 1)})];
+  const ranges = [{z0:-9, z1:-5.6, h:3.4},{z0:-2.1, z1:2.1, h:4.0},{z0:5.6, z1:9, h:3.4}];
+  for(const r of ranges){
+    const d=r.z1-r.z0, zc=(r.z0+r.z1)/2;
+    box(market, L, r.h, d, cx, 0, zc, brickMats(C.yellowBrick));
+    box(market, L+0.1, 0.25, d+0.1, cx, r.h, zc, M(C.granite), {cast:false});
+    roof(market, d+0.2, L, d>4?1.2:0.9, cx, r.h+0.25, zc, [M(C.slate),M(C.slate)]);
+    // granite west-end pavilion
+    box(market, 1.8, r.h+0.9, d+0.2, x0+0.9, 0, zc, M(C.granite));
+  }
+  // Tuscan colonnades of twelve bays on north and south fronts
+  const colGeo = new THREE.CylinderGeometry(0.2, 0.23, 2.7, 12);
+  const cm = M(C.granite);
+  for(const side of [-1, 1]){
+    const zf = side*10.3;
+    for(let i=0;i<=12;i++){ const c=new THREE.Mesh(colGeo, cm); c.position.set(x0+0.3 + i*(L-0.6)/12, 1.35, zf); c.castShadow=c.receiveShadow=true; market.add(c); }
+    box(market, L, 0.35, 1.5, cx, 2.7, side*9.65, M(C.granite));
+    box(market, L, 0.12, 1.5, cx, 3.05, side*9.65, M(C.slate), {cast:false});
+  }
+  // east terrace with twin conservatories and fountain
+  box(market, 2.6, 2.6, 19.2, x1+1.3, 0, 0, M(C.granite));
+  const glass = new THREE.MeshStandardMaterial({color:0xbfd6dc, transparent:true, opacity:0.45, roughness:0.15, metalness:0.1});
+  for(const z of [-6.3, 6.3]){
+    const gl=box(market, 2.2, 1.6, 4.6, x1+1.3, 2.6, z, glass); gl.castShadow=false;
+    roof(market, 2.2, 4.6, 0.7, x1+1.3, 4.2, z, [glass,glass]).rotation.y=Math.PI/2;
+  }
+  const fb=new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.8,0.35,20), M('#e6e0d6')); fb.position.set(x1+1.3,2.78,0); market.add(fb);
+  const fp=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,1.0,10), M('#e6e0d6')); fp.position.set(x1+1.3,3.3,0); market.add(fp);
+}
+
+/* surrounding city fabric (generic) */
+{
+  const fm = C.filler.map(c=>M(c));
+  const free = (x,z)=>{
+    if (x>-46 && x<26.5 && z>-21 && z<21) return false;           // core
+    if (Math.abs(x)<1.6 && z<-19) return false;                    // James St
+    if (Math.abs(z)<1.8 && x>24) return false;                     // Russell St
+    if (x>3.7 && x<6.9 && z>19) return false;                      // Southampton St (approx.)
+    if (x<-44 && ((z>-16 && z<-12.6)||(z>12.6&&z<16))) return false; // King / Henrietta St
+    return true;
+  };
+  for(let gx=-96; gx<=90; gx+=8) for(let gz=-84; gz<=84; gz+=8){
+    for(const [ox,oz] of [[0,0],[3.6,0],[0,3.6],[3.6,3.6]]){
+      const x=gx+ox+1.8, z=gz+oz+1.8;
+      if(!free(x-1.8,z-1.8)||!free(x+1.8,z+1.8)||!free(x-1.8,z+1.8)||!free(x+1.8,z-1.8)) continue;
+      const h=R(3.0,5.2);
+      box(world, 3.5, h, 3.5, x, 0, z, pick(fm), {cast:false, recv:true});
+    }
+  }
+}
+
+/* gas lamps (illustrative) */
+const lamps=[]; const glowTex = canvasTex(64,64,(g,w,h)=>{ const gr=g.createRadialGradient(32,32,0,32,32,32);
+  gr.addColorStop(0,'rgba(255,214,140,1)'); gr.addColorStop(0.35,'rgba(255,190,100,.45)'); gr.addColorStop(1,'rgba(255,170,80,0)'); g.fillStyle=gr; g.fillRect(0,0,w,h); });
+const lampHeadMat = new THREE.MeshStandardMaterial({color:0x222222, emissive:0xffc070, emissiveIntensity:2});
+for(const [x,z] of [[-15,-14.9],[-5,-14.9],[5,-14.9],[15,-14.9],[-15,14.9],[-5,14.9],[5,14.9],[15,14.9],[-17.2,-5.5],[-17.2,5.5],[20.3,-11],[20.3,11]]){
+  box(world, 0.12, 2.5, 0.12, x, 0, z, M('#262422'), {cast:false});
+  const head=box(world, 0.3, 0.38, 0.3, x, 2.5, z, lampHeadMat, {cast:false});
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex, blending:THREE.AdditiveBlending, depthWrite:false, transparent:true}));
+  sp.position.set(x, 2.7, z); sp.scale.set(3.2,3.2,1); world.add(sp); lamps.push(sp);
+}
+
+/* ---------------- activity: carts, horses, donkeys ---------------- */
+const horseCols=['#5b3d28','#3a2a20','#7a5a3c','#2c2622','#8a8278'];
+const loadCols=['#6d8a3f','#7f9a48','#c98a3a','#9c3b2f','#8a6a3e','#a8b26a'];
+function makeHorse(parent, x, z, scale=1, col){
+  const g=new THREE.Group(); g.position.set(x,0,z); g.scale.setScalar(scale); parent.add(g);
+  const m=M(col);
+  box(g, 0.9, 0.4, 0.32, 0, 0.55, 0, m);
+  for(const [lx,lz] of [[0.36,0.11],[0.36,-0.11],[-0.36,0.11],[-0.36,-0.11]]) box(g, 0.09, 0.56, 0.09, lx, 0, lz, m, {cast:false});
+  const neck=box(g, 0.22, 0.42, 0.16, 0.5, 0.72, 0, m); neck.rotation.z=-0.5;
+  box(g, 0.34, 0.15, 0.15, 0.68, 1.05, 0, m, {cast:false});
+  return g;
+}
+function makeCart(type){
+  const g=new THREE.Group();
+  const wood=M('#6a5038'), wheelM=M('#3b2e22');
+  const wheel=(x,z,r)=>{ const w=new THREE.Mesh(new THREE.CylinderGeometry(r,r,0.08,14), wheelM); w.rotation.x=Math.PI/2; w.position.set(x,r,z); w.castShadow=true; g.add(w); };
+  if(type==='waggon'){
+    box(g, 2.3, 0.55, 1.0, 0, 0.55, 0, wood);
+    box(g, 2.1, 0.45, 0.9, 0, 1.1, 0, M(pick(loadCols)));
+    box(g, 0.9, 0.3, 0.8, -0.4, 1.55, 0, M(pick(loadCols)));
+    wheel(-0.75,0.55,0.52); wheel(-0.75,-0.55,0.52); wheel(0.75,0.55,0.4); wheel(0.75,-0.55,0.4);
+    const hc=pick(horseCols);
+    makeHorse(g, 1.85, 0.26, 1.05, hc); makeHorse(g, 1.85, -0.26, 1.05, hc);
+    makeHorse(g, 2.95, 0.26, 1.05, pick(horseCols)); makeHorse(g, 2.95, -0.26, 1.05, pick(horseCols));
+    g.userData.len=3.6;
+  } else if(type==='cart'){
+    box(g, 1.4, 0.4, 0.8, 0, 0.5, 0, wood);
+    box(g, 1.25, 0.35, 0.7, 0, 0.9, 0, M(pick(loadCols)));
+    wheel(0,0.45,0.48); wheel(0,-0.45,0.48);
+    box(g, 0.9, 0.05, 0.05, 1.05, 0.62, 0.2, wood, {cast:false}); box(g, 0.9, 0.05, 0.05, 1.05, 0.62, -0.2, wood, {cast:false});
+    makeHorse(g, 1.35, 0, 1, pick(horseCols));
+    g.userData.len=2.2;
+  } else { // costermonger's donkey cart
+    box(g, 0.9, 0.25, 0.6, 0, 0.35, 0, wood);
+    box(g, 0.8, 0.22, 0.5, 0, 0.6, 0, M(pick(loadCols)));
+    wheel(0,0.34,0.32); wheel(0,-0.34,0.32);
+    makeHorse(g, 0.95, 0, 0.62, '#7d7064');
+    g.userData.len=1.5;
+  }
+  return g;
+}
+const carts=[];
+const occupied=[]; // points blocked for people
+function tryPlaceCart(region, angleFn, show, typeWeights, tries=40){
+  for(let k=0;k<tries;k++){
+    const x=R(region[0],region[1]), z=R(region[2],region[3]);
+    const a=angleFn();
+    const dx=Math.cos(a), dz=-Math.sin(a);
+    const pts=[[x-dx*1.2,z-dz*1.2],[x,z],[x+dx*1.75,z+dz*1.75],[x+dx*3.2,z+dz*3.2]];
+    if (pts.some(([px,pz])=> (px<-17.6 && px>-22 && Math.abs(pz)<4.4) || (px>-8.6 && px<19 && Math.abs(pz)<10.8))) continue;
+    if (carts.some(c=>c.pts.some(p=>pts.some(q=>Math.hypot(p[0]-q[0],p[1]-q[1])<1.5)))) continue;
+    const r=rng(); const type = r<typeWeights[0]?'waggon': r<typeWeights[0]+typeWeights[1]?'cart':'coster';
+    const g=makeCart(type); g.scale.setScalar(1.25); g.position.set(x,0,z); g.rotation.y=a; g.visible=false; world.add(g);
+    carts.push({g, pts, show}); occupied.push(...pts); return true;
+  }
+  return false;
+}
+const along = (a)=>()=>a + R(-0.12,0.12);
+const either = (a)=>()=> (rng()<0.5?a:a+Math.PI) + R(-0.15,0.15);
+// approach streets (carts face towards the piazza): visible from "An hour wears away"
+for(let i=0;i<7;i++) tryPlaceCart([26,58,-1.0,1.0], along(Math.PI), [2,3], [0.3,0.5]);        // Russell St, heading west
+for(let i=0;i<6;i++) tryPlaceCart([-0.6,0.6,-58,-22], along(-Math.PI/2), [2,3], [0.25,0.5]);   // James St, heading south
+for(let i=0;i<3;i++) tryPlaceCart([4.9,5.6,22,48], along(Math.PI/2), i<1?[2,3]:[3], [0.2,0.5]); // Southampton St, heading north
+for(let i=0;i<3;i++) tryPlaceCart([-62,-46,-14.6,-14.0], along(0), i<1?[2,3]:[3], [0.1,0.5]);  // King St
+for(let i=0;i<3;i++) tryPlaceCart([-62,-46,14.0,14.6], along(0), i<1?[2,3]:[3], [0.1,0.5]);    // Henrietta St
+// in the piazza (around the market) — thronged at the ¶7 step
+for(let i=0;i<9;i++) tryPlaceCart([-15.4,-11.6,-10.6,10.6], ()=>R(0,Math.PI*2), i<3?[2,3]:[3], [0.15,0.45]);
+for(let i=0;i<10;i++) tryPlaceCart([-19,17,-14.6,-11.4], either(0), i<3?[2,3]:[3], [0.12,0.45]);
+for(let i=0;i<10;i++) tryPlaceCart([-19,17,11.4,14.6], either(0), i<3?[2,3]:[3], [0.12,0.45]);
+for(let i=0;i<2;i++) tryPlaceCart([19.2,19.6,-12,12], either(-Math.PI/2), [3], [0,0.2]);
+
+/* ---------------- people (instanced capsules + heads) ---------------- */
+const people=[];
+function freeSpot(x,z,minCart=1.15){
+  for(const p of occupied) if (Math.hypot(p[0]-x,p[1]-z)<minCart) return false;
+  return true;
+}
+function addPeople(n, regions, cat, show, extra={}){
+  let made=0, guard=0;
+  while(made<n && guard<n*60){
+    guard++;
+    const reg = regions[Math.floor(rng()*regions.length)];
+    const x=R(reg[0],reg[1]), z=R(reg[2],reg[3]);
+    if(!freeSpot(x,z)) continue;
+    if(people.some(p=>Math.abs(p.x-x)<0.55 && Math.abs(p.z-z)<0.55)) continue;
+    people.push({x,z,cat,show,rot:R(0,6.28), ...extra}); made++;
+  }
+}
+const REG = {
+  fore:[-17.6,-9.2,-10.5,10.5], nlane:[-20.5,20.3,-15.2,-10.8], slane:[-20.5,20.3,10.8,15.2],
+  courts1:[-5.8,15.5,-5.3,-2.4], courts2:[-5.8,15.5,2.4,5.3], colN:[-7.6,15.6,-10.6,-9.3], colS:[-7.6,15.6,9.3,10.6],
+  elane:[19.0,20.6,-14,14], russell:[25.6,56,-1.3,1.3], james:[-1.1,1.1,-56,-21], south:[4.3,6.2,21,46],
+  king:[-60,-22.5,-15.4,-13.4], hen:[-60,-22.5,13.4,15.4], arcN:[-20.5,20.5,-17.0,-16.1], arcE:[21.2,22.4,-15,-2]
+};
+// specials (¶2–3): policeman at street corners; houseless vagrant coiled in a paved corner; the last drunk
+people.push({x:-20.3,z:-13.9,cat:'police',show:[0,1],rot:0.6});
+people.push({x:19.6,z:12.6,cat:'police',show:[1],rot:2.4});
+people.push({x:9.2,z:-16.55,cat:'vagrant',show:[0,1],rot:0, lying:true});
+people.push({x:-6,z:12.4,cat:'drunk',show:[0],rot:0, tilt:0.32});
+// market folk
+addPeople(22, [REG.courts1,REG.courts2,REG.colN,REG.colS], 'market', [2,3,4,5]);                 // stall-holders
+addPeople(20, [REG.russell,REG.james,REG.south], 'market', [2,3], {basket:true});                // fruit-carriers (¶5)
+addPeople(30, [REG.fore,REG.nlane,REG.slane,REG.elane], 'market', [2,3]);     // early porters
+addPeople(95, [REG.fore,REG.nlane,REG.slane,REG.elane,REG.courts1,REG.courts2,REG.russell,REG.james], 'market', [3]);
+people.filter(p=>p.cat==='market' && p.basket===undefined).forEach(p=>{ p.basket = rng()<0.3; });
+// eleven o'clock / noon crowd (¶13)
+addPeople(55, [REG.fore,REG.nlane,REG.slane,REG.colN,REG.colS,REG.arcN,REG.king,REG.hen], 'crowd', [4,5]);
+addPeople(140, [REG.fore,REG.fore,REG.nlane,REG.slane], 'crowd', [5]);
+addPeople(170, [REG.fore,REG.nlane,REG.slane,REG.elane,REG.colN,REG.colS,REG.courts1,REG.courts2,REG.arcN,REG.arcE,REG.russell,REG.james,REG.south,REG.king,REG.hen], 'crowd', [5]);
+
+const PCOL = {
+  market:['#6b4e3a','#4a4a52','#7a6a55','#5b3a30','#3e4a5a','#8a7a5e','#6e3b32','#5a5040'],
+  crowd:['#b8453a','#2f5f8f','#d9c27a','#3f7a5a','#8e4f8e','#ece6d6','#c47a3a','#2e2e33','#a3364f','#4f7fb0'],
+  police:['#26335a'], vagrant:['#4d463c'], drunk:['#5d4a3a']
+};
+people.forEach(p=>{ p.col = new THREE.Color(pick(PCOL[p.cat])); p.skin = new THREE.Color(pick(['#d8b190','#c9a07c','#e0bfa0'])); });
+const NP = people.length;
+const bodyMesh = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.14, 0.34, 3, 8), new THREE.MeshStandardMaterial({roughness:0.9}), NP);
+const headMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.1, 10, 8), new THREE.MeshStandardMaterial({roughness:0.8}), NP);
+const basketMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2,0.15,0.16,10), new THREE.MeshStandardMaterial({color:0x9a7a4a, roughness:0.95}), NP);
+const hatMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.09,0.09,0.2,10), new THREE.MeshStandardMaterial({color:0x15161a, roughness:0.7}), NP);
+for(const im of [bodyMesh, headMesh, basketMesh, hatMesh]){ im.castShadow=true; im.receiveShadow=true; im.frustumCulled=false; world.add(im); }
+
+/* litter: cabbage leaves, hay-bands (¶7) */
+const litter=[];
+for(let i=0;i<170;i++){
+  const reg=pick([REG.fore,REG.nlane,REG.slane,REG.elane,REG.courts1,REG.courts2]);
+  litter.push({x:R(reg[0],reg[1]), z:R(reg[2],reg[3]), r:R(0,6.28), s:R(0.6,1.3), c:new THREE.Color(pick(['#6f8a3c','#8aa04a','#b5a55a','#5d7a34','#a08a50'])), early: i<45});
+}
+const litterMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.14,0.14,0.02,7), new THREE.MeshStandardMaterial({roughness:1}), litter.length);
+litterMesh.receiveShadow=true; litterMesh.frustumCulled=false; world.add(litterMesh);
+
+/* produce in the market courts (illustrative) */
+const crates=[];
+for(let i=0;i<34;i++){
+  const reg=pick([REG.courts1,REG.courts2]); const x=R(reg[0],reg[1]), z=R(reg[2],reg[3]);
+  const c=box(world, R(0.4,0.8), R(0.3,0.5), R(0.4,0.6), x, 0, z, M(pick(loadCols))); c.rotation.y=R(0,1); c.visible=false; crates.push(c);
+}
+/* "little deal tables" for a street breakfast (¶5) */
+const tables=[];
+for(const [x,z] of [[24,-2.4],[2.3,-21.5],[-17,11.5]]){
+  const g=new THREE.Group(); g.position.set(x,0,z); world.add(g);
+  box(g, 0.9, 0.06, 0.55, 0, 0.62, 0, M('#b89a6a')); for(const [a,b] of [[0.38,0.22],[0.38,-0.22],[-0.38,0.22],[-0.38,-0.22]]) box(g,0.05,0.62,0.05,a,0,b,M('#7a6040'),{cast:false});
+  box(g, 0.2, 0.22, 0.2, 0.2, 0.68, 0, M('#7a7f86'));
+  g.visible=false; tables.push(g);
+}
+
+/* ---------------- time steps ---------------- */
+const STEPS = [
+  {tick:'−1 h', name:'An hour before sunrise', para:'¶1–3', solar:2.75,
+   en:'“an air of cold, solitary desolation about the noiseless streets”',
+   ko:'소리 없는 거리 위로 차갑고 외로운 황량함이 감돈다.',
+   skyTop:'#0e1838', skyBot:'#33405f', hemiSky:'#8498d0', hemiGnd:'#2a2930', hemiI:1.1, fillI:0.6, sunI:0, sunCol:'#ffffff', exposure:1.15, lamps:1, lit:1},
+  {tick:'Dawn', name:'Daybreak', para:'¶2–3', solar:3.3,
+   en:'“cold and lifeless as they look in the grey, sombre light of daybreak”',
+   ko:'새벽의 잿빛 음울한 빛 속에서 거리는 차갑고 생기 없어 보인다.',
+   skyTop:'#4a5568', skyBot:'#a3a4a2', hemiSky:'#b4bac4', hemiGnd:'#3a3834', hemiI:1.15, fillI:0.35, sunI:0, sunCol:'#ffffff', exposure:1.05, lamps:0.55, lit:0.6},
+  {tick:'+1 h', name:'An hour wears away', para:'¶4–5', solar:4.0,
+   en:'“Market-carts roll slowly along: the sleepy waggoner impatiently urging on his tired horses”',
+   ko:'시장 수레들이 느릿느릿 굴러간다. 졸린 마부는 지친 말을 성급히 재촉한다.',
+   skyTop:'#6f8db5', skyBot:'#f0b07a', hemiSky:'#c9cfe0', hemiGnd:'#4a4036', hemiI:1.25, fillI:0.15, sunI:2.4, sunCol:'#ffa860', exposure:1.0, lamps:0, lit:0},
+  {tick:'6:30', name:'Half-past six', para:'¶7 (market) · ¶8 (time)', solar:6.5,
+   en:'“Covent-garden market, and the avenues leading to it, are thronged with carts of all sorts, sizes, and descriptions”',
+   ko:'코벤트가든 시장과 그리로 이어지는 길들은 온갖 종류, 크기, 모양의 수레로 붐빈다.',
+   skyTop:'#6a9bd3', skyBot:'#e6d6b4', hemiSky:'#d6e0f0', hemiGnd:'#544a3e', hemiI:1.0, fillI:0, sunI:2.8, sunCol:'#ffe0b0', exposure:1.0, lamps:0, lit:0},
+  {tick:'11:00', name:'Eleven o’clock', para:'¶13', solar:11,
+   en:'“the carts have disappeared from Covent-garden; the waggoners have returned”',
+   ko:'수레들은 코벤트가든에서 사라졌고, 짐마차꾼들은 돌아갔다.',
+   skyTop:'#5a92d6', skyBot:'#cfe0ee', hemiSky:'#dfe8f5', hemiGnd:'#5a5044', hemiI:1.0, fillI:0, sunI:3.0, sunCol:'#fff4e2', exposure:0.95, lamps:0, lit:0},
+  {tick:'Noon', name:'Noon', para:'¶13', solar:12,
+   en:'“The streets are thronged with a vast concourse of people … the heat, bustle, and activity of Noon.”',
+   ko:'거리는 거대한 인파로 붐비고, 우리는 정오의 더위와 소란과 활기에 이른다.',
+   skyTop:'#6a9ad6', skyBot:'#e8e6dc', hemiSky:'#e6ecf5', hemiGnd:'#5e5446', hemiI:1.05, fillI:0, sunI:3.2, sunCol:'#fff0d4', exposure:0.95, lamps:0, lit:0},
+];
+const NOTES = [
+  'Empty piazza; a policeman at a corner, a vagrant asleep under the arcade.',
+  'Still empty — “the stillness of death is over the streets” (¶2).',
+  'First carts in the approach streets; fruit-carriers with baskets (¶5).',
+  'Market scene of ¶7 shown at the ¶8 time-marker. Numbers of carts/people are illustrative.',
+  'Carts gone (¶13); stall-holders remain; “a new set of people fill the streets”.',
+  'Crowd (bright colours: “gay and shabby, rich and poor”) fills the piazza (¶13).'
+];
+
+// sun position: London 51.5°N, midsummer (δ = +23.44°), local solar time — an assumption (Dickens: "a summer's morning")
+function sunDir(solarHour){
+  const d2r=Math.PI/180, phi=51.51*d2r, dec=23.44*d2r, H=(solarHour-12)*15*d2r;
+  const alt=Math.asin(Math.sin(phi)*Math.sin(dec)+Math.cos(phi)*Math.cos(dec)*Math.cos(H));
+  const azS=Math.atan2(Math.sin(H), Math.cos(H)*Math.sin(phi)-Math.tan(dec)*Math.cos(phi)); // from south, +west
+  const azN=azS+Math.PI;
+  return {alt, azN, v:new THREE.Vector3(Math.cos(alt)*Math.sin(azN), Math.sin(alt), -Math.cos(alt)*Math.cos(azN))};
+}
+function fmtSolar(h){ const H=Math.floor(h), m=Math.round((h-H)*60); return H+':'+String(m).padStart(2,'0'); }
+
+const PS=1.5; // figures enlarged ×1.5 for legibility (schematic, not to scale)
+const tmpM=new THREE.Matrix4(), tmpQ=new THREE.Quaternion(), tmpE=new THREE.Euler(), tmpS=new THREE.Vector3(PS,PS,PS), tmpP=new THREE.Vector3();
+function applyStep(s){
+  step=s; const S=STEPS[s];
+  skyU.top.value.set(S.skyTop); skyU.bottom.value.set(S.skyBot);
+  scene.fog.color.set(S.skyBot);
+  hemi.color.set(S.hemiSky); hemi.groundColor.set(S.hemiGnd); hemi.intensity=S.hemiI;
+  fill.intensity=S.fillI;
+  renderer.toneMappingExposure=S.exposure;
+  const sd=sunDir(S.solar);
+  sun.color.set(S.sunCol);
+  sun.intensity = sd.alt>0 ? S.sunI : 0;
+  sun.castShadow = sd.alt>0;
+  sun.position.copy(sd.v).multiplyScalar(160).add(new THREE.Vector3(-2,0,0));
+  sun.target.position.set(-2,0,0);
+  lamps.forEach(l=>{ l.visible=S.lamps>0; l.material.opacity=S.lamps; });
+  lampHeadMat.emissiveIntensity = S.lamps>0 ? 2.2*S.lamps : 0;
+  litWindows.forEach(w=>{ w.visible=S.lit>0; });
+  carts.forEach(c=>{ c.g.visible = c.show.includes(s); });
+  crates.forEach(c=>{ c.visible = s>=2; });
+  tables.forEach(t=>{ t.visible = (s===2||s===3); });
+  // people
+  let k=0;
+  for(const p of people){
+    if(!p.show.includes(s)) continue;
+    tmpE.set(p.lying?0:0, p.rot, p.lying?Math.PI/2:(p.tilt||0)); tmpQ.setFromEuler(tmpE);
+    if(p.lying){ tmpP.set(p.x, 0.15*PS, p.z); } else { tmpP.set(p.x, 0.31*PS, p.z); }
+    tmpM.compose(tmpP, tmpQ, tmpS); bodyMesh.setMatrixAt(k, tmpM); bodyMesh.setColorAt(k, p.col);
+    if(p.lying){ tmpP.set(p.x+0.36*PS, 0.13*PS, p.z); } else { tmpP.set(p.x + (p.tilt? Math.sin(p.tilt)*-0.25*PS:0), 0.72*PS, p.z); }
+    tmpM.compose(tmpP, tmpQ, tmpS); headMesh.setMatrixAt(k, tmpM); headMesh.setColorAt(k, p.skin);
+    k++;
+  }
+  bodyMesh.count=k; headMesh.count=k;
+  bodyMesh.instanceMatrix.needsUpdate=true; headMesh.instanceMatrix.needsUpdate=true;
+  if(bodyMesh.instanceColor) bodyMesh.instanceColor.needsUpdate=true;
+  if(headMesh.instanceColor) headMesh.instanceColor.needsUpdate=true;
+  let kb=0, kh=0;
+  for(const p of people){
+    if(!p.show.includes(s)) continue;
+    if(p.basket && !p.lying){ tmpP.set(p.x,0.88*PS,p.z); tmpM.compose(tmpP, tmpQ.identity(), tmpS); basketMesh.setMatrixAt(kb++, tmpM); }
+    if(p.cat==='police'){ tmpP.set(p.x,0.9*PS,p.z); tmpM.compose(tmpP, tmpQ.identity(), tmpS); hatMesh.setMatrixAt(kh++, tmpM); }
+  }
+  basketMesh.count=kb; hatMesh.count=kh; basketMesh.instanceMatrix.needsUpdate=true; hatMesh.instanceMatrix.needsUpdate=true;
+  // litter
+  const nL = s===2 ? 45 : s===3 ? litter.length : 0; let kl=0;
+  for(let i=0;i<litter.length && kl<nL;i++){ const L=litter[i]; if(s===2 && !L.early) continue;
+    tmpE.set(0,L.r,0); tmpQ.setFromEuler(tmpE); tmpP.set(L.x,0.04,L.z); tmpM.compose(tmpP,tmpQ,new THREE.Vector3(L.s,1,L.s*0.7));
+    litterMesh.setMatrixAt(kl, tmpM); litterMesh.setColorAt(kl, L.c); kl++; }
+  litterMesh.count=kl; litterMesh.instanceMatrix.needsUpdate=true; if(litterMesh.instanceColor) litterMesh.instanceColor.needsUpdate=true;
+  // caption
+  document.getElementById('stepName').textContent=S.name;
+  document.getElementById('paras').textContent=S.para;
+  document.getElementById('quoteEn').textContent=S.en;
+  document.getElementById('quoteKo').textContent=S.ko;
+  const altDeg = Math.round(sd.alt*180/Math.PI);
+  document.getElementById('meta').textContent = NOTES[s] + '  Sun ' + (altDeg>=0? '≈'+altDeg+'° up' : '≈'+(-altDeg)+'° below horizon') + ' (assumed midsummer, solar time ≈ '+fmtSolar(S.solar)+').';
+  document.getElementById('slider').value=s;
+  document.querySelectorAll('#ticks span').forEach((el,i)=>el.classList.toggle('on', i===s));
+}
+
+/* ---------------- labels ---------------- */
+const LABELS = [
+  {p:[-19.6,8.6,0], t:'St Paul’s Church', s:'Tuscan portico facing the piazza · Inigo Jones, 1631–33', pr:1},
+  {p:[3,6.8,0], t:'Market building', s:'Charles Fowler, 1828–30 · three ranges', pr:2},
+  {p:[-11,8.9,-17.8], t:'Arcaded houses', s:'the “Great Piazza”, north & east sides', pr:3},
+  {p:[23,7.6,4.1], t:'The Hummums', s:'hotel · Little Piazza (approx. site)', pr:4},
+  {p:[0,0.6,-25], t:'James St.', minor:true, pr:6},
+  {p:[29,0.6,0], t:'Russell St.', minor:true, pr:6},
+  {p:[-40,0.6,-14.4], t:'King St.', minor:true, pr:7},
+  {p:[-40,0.6,14.4], t:'Henrietta St.', minor:true, pr:7},
+  {p:[5.3,0.6,25], t:'Southampton St. (approx.)', minor:true, pr:8},
+];
+const labelLayer=document.getElementById('labels');
+for(const L of LABELS){
+  L.el=document.createElement('div'); L.el.className='lbl'+(L.minor?' minor':'');
+  L.el.innerHTML = L.minor ? L.t : `<b>${L.t}</b><small>${L.s}</small>`;
+  L.stem=document.createElement('div'); L.stem.className='stem';
+  L.dot=document.createElement('div'); L.dot.className='dot';
+  if(!L.minor){ labelLayer.appendChild(L.stem); labelLayer.appendChild(L.dot); }
+  labelLayer.appendChild(L.el);
+  L.v=new THREE.Vector3(...L.p);
+}
+function measureLabels(){ for(const L of LABELS){ L.w=L.el.offsetWidth; L.h=L.el.offsetHeight; } }
+const pv=new THREE.Vector3();
+const TOPMIN = 62;
+function updateLabels(){
+  labelLayer.style.display = showLabels ? '' : 'none';
+  if(!showLabels) return;
+  const W=app.clientWidth, H=app.clientHeight, placed=[];
+  if(!W || !H) return;
+  const sorted=[...LABELS].sort((a,b)=>a.pr-b.pr);
+  for(const L of sorted){
+    pv.copy(L.v).project(camera);
+    const vis = pv.z<1 && pv.x>-1.1 && pv.x<1.1 && pv.y>-1.1 && pv.y<1.1;
+    if(!vis){ L.el.style.display='none'; L.stem.style.display='none'; L.dot.style.display='none'; continue; }
+    const ax=(pv.x*0.5+0.5)*W, ay=(-pv.y*0.5+0.5)*H;
+    let stemLen = L.minor ? 0 : 18, x, y, ok=false;
+    for(let tries=0; tries<7; tries++){
+      x = Math.min(Math.max(ax - L.w/2, 6), W - L.w - 6);
+      y = L.minor ? ay - L.h/2 : Math.max(ay - stemLen - L.h, TOPMIN);
+      const r={x0:x-3,y0:y-3,x1:x+L.w+3,y1:y+L.h+3};
+      if(!placed.some(q=>r.x0<q.x1&&r.x1>q.x0&&r.y0<q.y1&&r.y1>q.y0)){ ok=true; placed.push(r); break; }
+      if(L.minor) break;
+      stemLen += L.h*0.7;
+    }
+    if(!ok && L.minor){ L.el.style.display='none'; continue; }
+    if(!ok){ placed.push({x0:x,y0:y,x1:x+L.w,y1:y+L.h}); }
+    L.el.style.display=''; L.el.style.transform=`translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
+    if(!L.minor){
+      L.stem.style.display=''; L.dot.style.display='';
+      const lb=y+L.h, st=Math.min(ay, lb), sh=Math.abs(ay-lb);
+      L.stem.style.transform=`translate(${ax.toFixed(1)}px,${st.toFixed(1)}px)`; L.stem.style.height=sh+'px';
+      L.dot.style.transform=`translate(${ax.toFixed(1)}px,${ay.toFixed(1)}px)`;
+    }
+  }
+}
+
+/* ---------------- camera views ---------------- */
+function defaultView(){
+  const aspect = Math.max(1,app.clientWidth)/Math.max(1,app.clientHeight);
+  const k = aspect<1 ? Math.min(2.1, 1.0/Math.pow(aspect,0.85)) : 1;
+  const target=new THREE.Vector3(-6,0,0);
+  const off=new THREE.Vector3(30, 72, 54).multiplyScalar(k*1.12);
+  if(VIEW==='top'){ return {pos:new THREE.Vector3(-3, 110*k, 4), target:new THREE.Vector3(-3,0,0)}; }
+  if(VIEW==='portico'){ return {pos:new THREE.Vector3(-2, 6, 12), target:new THREE.Vector3(-19,4,0)}; }
+  if(VIEW==='close'){ return {pos:new THREE.Vector3(-1, 15, 17).multiplyScalar(aspect<1?1.25:1), target:new THREE.Vector3(-15,1.5,-1)}; }
+  return {pos:target.clone().add(off), target};
+}
+let tween=null;
+function setView(v, animate){
+  if(!animate){ camera.position.copy(v.pos); controls.target.copy(v.target); controls.update(); return; }
+  tween={t0:performance.now(), dur:700, p0:camera.position.clone(), t0v:controls.target.clone(), p1:v.pos, t1v:v.target};
+}
+
+/* ---------------- UI ---------------- */
+const ticks=document.getElementById('ticks');
+STEPS.forEach((S,i)=>{ const sp=document.createElement('span'); sp.textContent=S.tick; sp.title=S.name; sp.onclick=()=>applyStep(i); ticks.appendChild(sp); });
+document.getElementById('slider').addEventListener('input', e=>applyStep(+e.target.value));
+document.getElementById('prev').onclick=()=>applyStep(Math.max(0,step-1));
+document.getElementById('next').onclick=()=>applyStep(Math.min(5,step+1));
+document.getElementById('reset').onclick=()=>setView(defaultView(), true);
+const lblBtn=document.getElementById('lblBtn');
+lblBtn.textContent = 'Labels: '+(showLabels?'on':'off');
+lblBtn.onclick=()=>{ showLabels=!showLabels; lblBtn.textContent='Labels: '+(showLabels?'on':'off'); if(showLabels){ labelLayer.style.display=''; measureLabels(); } };
+let playTimer=null; const playBtn=document.getElementById('play');
+playBtn.onclick=()=>{
+  if(playTimer){ clearInterval(playTimer); playTimer=null; playBtn.textContent='▶ Play'; return; }
+  playBtn.textContent='❚❚ Pause'; if(step===5) applyStep(0);
+  playTimer=setInterval(()=>{ if(step>=5){ clearInterval(playTimer); playTimer=null; playBtn.textContent='▶ Play'; return; } applyStep(step+1); }, 2600);
+};
+window.addEventListener('keydown', e=>{ if(e.key==='ArrowRight') applyStep(Math.min(5,step+1)); if(e.key==='ArrowLeft') applyStep(Math.max(0,step-1)); });
+
+function onResize(){
+  const w=Math.max(1,app.clientWidth), h=Math.max(1,app.clientHeight);
+  renderer.setSize(w,h); camera.aspect=w/h;
+  // keep the model clear of the caption panel: shift the image right/up on wide screens, up on phones
+  if (w>640) camera.setViewOffset(w, h, -Math.min(170, w*0.12), Math.min(30, h*0.03), w, h);
+  else camera.setViewOffset(w, h, 0, Math.min(150, h*0.17), w, h);
+  camera.updateProjectionMatrix(); measureLabels();
+}
+window.addEventListener('resize', onResize);
+
+/* compass */
+const needle=document.getElementById('needle'), nletter=document.getElementById('nletter');
+const cA=new THREE.Vector3(), cB=new THREE.Vector3();
+function updateCompass(){
+  cA.copy(controls.target).project(camera); cB.copy(controls.target).add(new THREE.Vector3(0,0,-10)).project(camera);
+  const ang=Math.atan2((cB.x-cA.x)*app.clientWidth, (cB.y-cA.y)*app.clientHeight)*180/Math.PI;
+  if(Number.isFinite(ang)) needle.setAttribute('transform', `rotate(${ang.toFixed(1)})`);
+}
+
+/* ---------------- start ---------------- */
+onResize();
+setView(defaultView(), false);
+applyStep(step);
+const clock=new THREE.Clock();
+function loop(){
+  const t=clock.getElapsedTime();
+  if(tween){ const u=Math.min(1,(performance.now()-tween.t0)/tween.dur), e=u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
+    camera.position.lerpVectors(tween.p0,tween.p1,e); controls.target.lerpVectors(tween.t0v,tween.t1v,e); if(u>=1) tween=null; }
+  controls.update();
+  { const d=camera.position.distanceTo(controls.target); scene.fog.near=d*0.95; scene.fog.far=d*2.6; }
+  if(STEPS[step].lit>0){ for(const w of litWindows){ w.material.opacity = STEPS[step].lit*(0.75+0.25*Math.sin(t*7+w.userData.phase)); } }
+  renderer.render(scene,camera);
+  updateLabels(); updateCompass();
+  if(SHOT){ if(++shotFrames < 4) setTimeout(loop, 30); else { const gl=renderer.getContext(); const px=new Uint8Array(4); gl.readPixels(Math.floor(gl.drawingBufferWidth/2), Math.floor(gl.drawingBufferHeight*0.8),1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+      { const img=new Image(); img.src=renderer.domElement.toDataURL('image/png'); img.style.cssText='position:absolute;inset:0;width:100%;height:100%'; app.appendChild(img); renderer.domElement.style.visibility='hidden'; }
+      document.getElementById('status').textContent += ' | shot-done px='+Array.from(px).join(',')+' lost='+gl.isContextLost()+' gl='+(gl.getParameter(gl.VERSION)); } return; }
+  requestAnimationFrame(loop);
+}
+const SHOT = Q.get('shot') === '1'; let shotFrames = 0;
+loop();
+window.__ready = true;
+const st=document.getElementById('status'); if(!window.__errors.length) st.textContent='ready: step '+step+', carts '+carts.length+', people '+people.length;
+</script>
+</body>
+</html>
