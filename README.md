@@ -3,6 +3,8 @@
 SKKU English 4034 · Introduction to Digital Humanities · Week 7 guest lecture (16 Oct 2026)
 성균관대 「디지털인문학입문」 7주차 특강 자료
 
+**처음이라면 / First time?** 실습 준비(모두 선택) → [**INSTALL.md**](INSTALL.md) · *Setup guide (all optional)*
+
 ## 바로 열기 / Open
 | | 무엇 / What | 링크 / Link |
 |---|---|---|

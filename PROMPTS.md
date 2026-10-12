@@ -1,7 +1,7 @@
 # PROMPTS: 복사해서 붙여 넣는 프롬프트 / Copy-paste prompts
 
-**준비:** [dh-lab.zip](https://github.com/jhoh-bigglz/skku-vibecoding-dickens/raw/main/dh-lab.zip)을 풀고, VS Code에서 `dh-lab` 폴더를 연 뒤(File → Open Folder) 그 터미널에서 `vixcode`를 실행합니다. 다른 폴더에서 실행하면 data/ 파일을 찾지 못합니다.
-**Setup:** unzip dh-lab.zip, open the `dh-lab` folder in VS Code (File → Open Folder) and run `vixcode` in its terminal. Started in another folder, it cannot find the data/ files.
+**준비:** [dh-lab.zip](https://github.com/jhoh-bigglz/skku-vibecoding-dickens/raw/main/dh-lab.zip)을 풀고, VS Code에서 `dh-lab` 폴더를 연 뒤(File → Open Folder) 그 터미널에서 `vixcode`(또는 쓰고 있는 코딩 AI)를 실행합니다. 다른 폴더에서 실행하면 data/ 파일을 찾지 못합니다. AI 채팅만 쓴다면 상자를 그대로 붙여 넣으면 됩니다. 설치 안내: [INSTALL.md](INSTALL.md)
+**Setup:** unzip dh-lab.zip, open the `dh-lab` folder in VS Code (File → Open Folder) and run `vixcode` (or the coding AI you use) in its terminal. Started in another folder, it cannot find the data/ files. With just an AI chat, paste a box as it is. Setup guide: [INSTALL.md](INSTALL.md)
 
 **순서:** ① 메모장에 내가 알고 싶은 것을 한 줄로 쓴다 → ② 아래 상자 하나를 통째로 복사해 `[ ]` 자리에 그 한 줄을 넣는다 → ③ Vix Code(또는 아무 AI 채팅)에 붙여 넣는다 → ④ **실행하지 말고, 받은 계획을 읽고 이상한 곳을 찾는다.**
 **Steps:** ① write one line in a notepad: what do you want to know? → ② copy one whole box and put that line in `[ ]` → ③ paste it into Vix Code (or any AI chat) → ④ **don't run anything; read the plan and find what's wrong.**
